@@ -6,6 +6,14 @@ The project architecture can be found in `docs/architecture.md`. If any code you
 
 The architecture document should act as a reference for how to implement the various parts of the project. It should not act as a scratchpad for writing notes or tracking progress
 
+## Code style
+
+### Comments
+
+Code comments should only be used to explain why a particular implementation decision was made. They should be rare. Their purpose should be to help future maintainers understand the context of the code so that they can make informed decisions about how to work with it
+
+If you need to write a comment, then you should aim to make it as clear and concise as possible.
+
 ## Tests
 
 Always use test-driven development when working on code in this repository

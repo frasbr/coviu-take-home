@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev:server": "npm run dev --workspace packages/server",
@@ -16,6 +18,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.20.2",
     "typescript": "^5.7.2",
     "vitest": "^5.0.0"
   }
