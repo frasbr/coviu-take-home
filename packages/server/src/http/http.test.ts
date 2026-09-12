@@ -19,7 +19,7 @@ beforeEach(async () => {
   const registry = new SessionRegistry();
   const services = createSessionService(repository, registry, "https://example.test");
 
-  const app = createHttpApp(services);
+  const app = createHttpApp(services, "https://client.example.test");
   server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, resolve));
   const address = server.address() as AddressInfo;
@@ -43,6 +43,17 @@ describe("POST /api/sessions", () => {
       patientUrl: expect.any(String),
     });
     expect(body).not.toHaveProperty("sessionId");
+  });
+});
+
+describe("CORS", () => {
+  it("allows the configured client origin on a cross-origin request", async () => {
+    const response = await fetch(`${baseUrl}/api/sessions`, {
+      method: "POST",
+      headers: { Origin: "https://client.example.test" },
+    });
+
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://client.example.test");
   });
 });
 

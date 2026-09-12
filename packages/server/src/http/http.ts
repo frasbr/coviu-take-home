@@ -3,6 +3,7 @@ import {
   type ErrorPayload,
   GetSessionParamsSchema,
 } from "@coviu/shared";
+import cors from "cors";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import type { SessionService } from "../services/sessionService.js";
 
@@ -10,8 +11,9 @@ function sendError(res: Response, status: number, payload: ErrorPayload): void {
   res.status(status).json(payload);
 }
 
-export function createHttpApp(services: SessionService): Express {
+export function createHttpApp(services: SessionService, clientUrl: string): Express {
   const app = express();
+  app.use(cors({ origin: clientUrl }));
   app.use(express.json());
 
   app.post("/api/sessions", (req: Request, res: Response) => {

@@ -22,12 +22,12 @@ const sessionService = createSessionService(repository, registry, CLIENT_URL);
 // Must run before the server accepts a request, and never touches the registry
 sessionService.endInterruptedSessions();
 
-const app = createHttpApp(sessionService);
+const app = createHttpApp(sessionService, CLIENT_URL);
 const server = createServer(app);
 
 const io = new Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>(
   server,
-  { pingInterval: 10_000, pingTimeout: 20_000 },
+  { pingInterval: 10_000, pingTimeout: 20_000, cors: { origin: CLIENT_URL } },
 );
 attachSignaling(io, sessionService, registry);
 
