@@ -581,17 +581,3 @@ These are the points to design new code around.
 - **A hosted database in place of SQLite.** Write a new implementation of the repository
   interface (§5.3). Do not touch the signaling code or the session code.
 
-## 8. Distance from the repository
-
-This document describes a design. The repository does not hold it yet. These are the
-differences, as of the last edit of this document.
-
-- `packages/shared` (§6.1) does not exist. There are two packages, not three.
-- The client is not a React app (§6.3). Its entry point is `packages/client/src/main.ts`.
-- There is no test file anywhere. An earlier document named
-  `packages/server/src/index.test.ts` as the existing convention. That file is not in the
-  repository.
-- The server (§6.2) has no modules. `packages/server/src/index.ts` is empty.
-- None of the dependencies in §2.1 are installed. The tree holds only `typescript`, `vitest`,
-  and `@biomejs/biome`.
-- There is no `data/app.db` (§5).
