@@ -1,0 +1,10 @@
+{
+  "prefix": "cth",
+  "nextId": 1,
+  "statuses": [
+    "backlog",
+    "priority",
+    "in-progress",
+    "done"
+  ]
+}
