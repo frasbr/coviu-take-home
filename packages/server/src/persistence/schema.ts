@@ -25,5 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_events_session_id ON events(session_id);
 `;
 
 export function applySchema(db: DatabaseSync): void {
+  // recordEvent must fail on an unknown session_id rather than write an orphan row.
+  db.exec("PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA_SQL);
 }

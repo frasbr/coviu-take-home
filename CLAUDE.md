@@ -12,7 +12,7 @@ The architecture document should act as a reference for how to implement the var
 
 Code comments should only be used to explain why a particular implementation decision was made. They should be rare. Their purpose should be to help future maintainers understand the context of the code so that they can make informed decisions about how to work with it
 
-If you need to write a comment, then you should aim to make it as clear and concise as possible.
+If you need to write a comment, then you should aim to make it as clear and concise as possible. Avoid referencing documentation as this is prone to become stale.
 
 ## Tests
 
