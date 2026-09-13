@@ -57,7 +57,6 @@ export function useMedia({ active, createPeer, getUserMedia }: UseMediaOptions):
   const streamRef = useRef<MediaStream | null>(null);
   const peerRef = useRef<MediaPeer | null>(null);
   const callRef = useRef<MediaCall | null>(null);
-  const callPlacedRef = useRef(false);
   const trackCallRef = useRef<((call: MediaCall) => void) | null>(null);
 
   // The injected dependencies live in refs so that `active` is the only thing
@@ -85,6 +84,9 @@ export function useMedia({ active, createPeer, getUserMedia }: UseMediaOptions):
         }
       });
       call.on("close", () => {
+        if (callRef.current === call) {
+          callRef.current = null;
+        }
         if (!cancelled) {
           setRemoteStream(null);
           setError(CALL_ENDED_ERROR);
@@ -125,13 +127,12 @@ export function useMedia({ active, createPeer, getUserMedia }: UseMediaOptions):
             if (cancelled) {
               return;
             }
-            if (callPlacedRef.current) {
+            if (callRef.current) {
               call.close();
               return;
             }
-            callPlacedRef.current = true;
-            call.answer(stream);
             trackCall(call);
+            call.answer(stream);
           });
           peer.on("error", () => {
             if (!cancelled) {
@@ -162,7 +163,6 @@ export function useMedia({ active, createPeer, getUserMedia }: UseMediaOptions):
       peerRef.current = null;
       stopTracks(streamRef.current);
       streamRef.current = null;
-      callPlacedRef.current = false;
       setLocalStream(null);
       setRemoteStream(null);
       setLocalPeerId(null);
@@ -170,15 +170,18 @@ export function useMedia({ active, createPeer, getUserMedia }: UseMediaOptions):
     };
   }, [active]);
 
+  // The guard is "a call is live", not "a call was placed": when the other side
+  // reloads, its old call closes and it sends a fresh peer ID, and this side has to
+  // be able to place a new call. A once-per-activation flag would leave the video
+  // black for the rest of the session.
   const callPeer = useCallback((peerId: string) => {
     const peer = peerRef.current;
     const stream = streamRef.current;
     const trackCall = trackCallRef.current;
-    if (!peer || !stream || !trackCall || callPlacedRef.current) {
+    if (!peer || !stream || !trackCall || callRef.current) {
       return;
     }
 
-    callPlacedRef.current = true;
     trackCall(peer.call(peerId, stream));
   }, []);
 

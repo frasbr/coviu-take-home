@@ -173,7 +173,7 @@ describe("useMedia", () => {
     expect(result.current.remoteStream).toBe(remote);
   });
 
-  it("calls a given peer only once, however often callPeer fires", async () => {
+  it("calls a given peer only once while that call is live, however often callPeer fires", async () => {
     const { result, peerFake } = await renderActive();
 
     act(() => {
@@ -241,7 +241,7 @@ describe("useMedia", () => {
     expect(result.current.remoteStream).toBe(remote);
   });
 
-  it("closes an inbound call that arrives once a call is already placed", async () => {
+  it("closes an inbound call that arrives while a call is live", async () => {
     const { result, peerFake } = await renderActive();
 
     act(() => {
@@ -273,6 +273,47 @@ describe("useMedia", () => {
 
     expect(peerFake.call).not.toHaveBeenCalled();
     expect(inbound.close).not.toHaveBeenCalled();
+  });
+
+  it("places a new call for a fresh peer id once the live call has closed", async () => {
+    const { result, peerFake, stream } = await renderActive();
+
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+    fire(peerFake.outbound[0].handlers, "close");
+
+    act(() => {
+      result.current.callPeer("remote-2");
+    });
+
+    expect(peerFake.call).toHaveBeenCalledTimes(2);
+    expect(peerFake.call).toHaveBeenLastCalledWith("remote-2", stream);
+
+    const remote = createStream().stream;
+    fire(peerFake.outbound[1].handlers, "stream", remote);
+
+    expect(result.current.remoteStream).toBe(remote);
+  });
+
+  it("answers an inbound call that arrives once the live call has closed", async () => {
+    const { result, peerFake, stream } = await renderActive();
+
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+    fire(peerFake.outbound[0].handlers, "close");
+
+    const inbound = createCall();
+    fire(peerFake.handlers, "call", inbound.call);
+
+    expect(inbound.answer).toHaveBeenCalledWith(stream);
+    expect(inbound.close).not.toHaveBeenCalled();
+
+    const remote = createStream().stream;
+    fire(inbound.handlers, "stream", remote);
+
+    expect(result.current.remoteStream).toBe(remote);
   });
 
   it("reports a capture failure and never creates a peer", async () => {
