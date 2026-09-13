@@ -31,12 +31,15 @@ export function VideoPanel({ localStream, remoteStream, error }: VideoPanelProps
   return (
     <div>
       {error && <p role="alert">{error}</p>}
-      <video ref={remoteRef} aria-label="Remote video" autoPlay playsInline width={VIDEO_WIDTH}>
-        <track kind="captions" />
-      </video>
-      <video ref={localRef} aria-label="Local video" autoPlay playsInline muted width={VIDEO_WIDTH}>
-        <track kind="captions" />
-      </video>
+      <video ref={remoteRef} aria-label="Remote video" autoPlay playsInline width={VIDEO_WIDTH} />
+      <video
+        ref={localRef}
+        aria-label="Local video"
+        autoPlay
+        playsInline
+        muted
+        width={VIDEO_WIDTH}
+      />
     </div>
   );
 }

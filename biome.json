@@ -13,6 +13,9 @@
     "enabled": true,
     "rules": {
       "recommended": true,
+      "a11y": {
+        "useMediaCaption": "off"
+      },
       "style": {
         "noNonNullAssertion": "off"
       }

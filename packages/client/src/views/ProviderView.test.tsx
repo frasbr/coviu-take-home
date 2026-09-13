@@ -183,6 +183,19 @@ describe("ProviderView", () => {
     expect(callPeer).not.toHaveBeenCalled();
   });
 
+  it("places the call on the render where its own peer opens, if the remote id came first", () => {
+    mockConnection(providerIn("ACTIVE"), "remote-peer");
+    mockMedia({ localPeerId: null });
+
+    const { rerender } = render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+    expect(callPeer).not.toHaveBeenCalled();
+
+    mockMedia({ localPeerId: "local-peer" });
+    rerender(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(callPeer).toHaveBeenCalledWith("remote-peer");
+  });
+
   it("shows a media error without disabling the session controls", async () => {
     mockConnection(providerIn("ACTIVE"));
     mockMedia({ error: "Could not access the camera or microphone." });
