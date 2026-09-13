@@ -12,9 +12,17 @@ vi.mock("../session/useSession.js", () => ({ useSession: vi.fn() }));
 const admit = vi.fn();
 const endSession = vi.fn();
 const leave = vi.fn();
+const sendPeerId = vi.fn();
 
 function mockConnection(connection: SessionConnection) {
-  vi.mocked(useSession).mockReturnValue({ connection, admit, endSession, leave });
+  vi.mocked(useSession).mockReturnValue({
+    connection,
+    remotePeerId: null,
+    admit,
+    endSession,
+    leave,
+    sendPeerId,
+  });
 }
 
 afterEach(() => {

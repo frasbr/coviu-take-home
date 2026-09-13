@@ -22,9 +22,11 @@ describe("App", () => {
   it("renders the provider view for /p/:key", () => {
     vi.mocked(useSession).mockReturnValue({
       connection: { status: "resolving" },
+      remotePeerId: null,
       admit: vi.fn(),
       endSession: vi.fn(),
       leave: vi.fn(),
+      sendPeerId: vi.fn(),
     });
 
     render(<App baseUrl="https://example.test" pathname="/p/pk" />);
@@ -35,9 +37,11 @@ describe("App", () => {
   it("renders the patient view for /w/:key", () => {
     vi.mocked(useSession).mockReturnValue({
       connection: { status: "resolving" },
+      remotePeerId: null,
       admit: vi.fn(),
       endSession: vi.fn(),
       leave: vi.fn(),
+      sendPeerId: vi.fn(),
     });
 
     render(<App baseUrl="https://example.test" pathname="/w/wk" />);
