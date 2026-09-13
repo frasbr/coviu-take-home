@@ -137,6 +137,40 @@ describe("PatientView", () => {
     expect(useMedia).toHaveBeenCalledWith(expect.objectContaining({ active: false }));
   });
 
+  it("activates media when ACTIVE and the patient is present", () => {
+    mockConnection({
+      status: "connected",
+      role: "patient",
+      state: {
+        state: "ACTIVE",
+        since: "2026-01-01T00:00:00.000Z",
+        reason: null,
+        presence: { provider: true, patient: true },
+      },
+    });
+
+    render(<PatientView baseUrl="https://example.test" sessionKey="wk" />);
+
+    expect(useMedia).toHaveBeenCalledWith(expect.objectContaining({ active: true }));
+  });
+
+  it("deactivates media when ACTIVE but the patient's presence has dropped", () => {
+    mockConnection({
+      status: "connected",
+      role: "patient",
+      state: {
+        state: "ACTIVE",
+        since: "2026-01-01T00:00:00.000Z",
+        reason: null,
+        presence: { provider: true, patient: false },
+      },
+    });
+
+    render(<PatientView baseUrl="https://example.test" sessionKey="wk" />);
+
+    expect(useMedia).toHaveBeenCalledWith(expect.objectContaining({ active: false }));
+  });
+
   it("sends its own peer id once the local peer is open", () => {
     mockConnection(patientIn("ACTIVE"));
     mockMedia({ localPeerId: "local-peer" });

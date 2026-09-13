@@ -14,7 +14,10 @@ export function PatientView({ baseUrl, sessionKey }: PatientViewProps) {
 
   // Derived from the session state alone: the two connections fail independently,
   // so a socket reconnect must not tear a live call down.
-  const active = connection.status === "connected" && connection.state.state === "ACTIVE";
+  const active =
+    connection.status === "connected" &&
+    connection.state.state === "ACTIVE" &&
+    connection.state.presence.patient;
 
   const { localStream, remoteStream, localPeerId, error } = useMedia({
     active,
