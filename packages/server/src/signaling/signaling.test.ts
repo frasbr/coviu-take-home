@@ -340,8 +340,11 @@ describe("peer:id", () => {
   });
 
   it("rejects peer:id once the session has ended, with session_ended", async () => {
-    const { sessionId, provider } = await connectActiveSession();
+    const { sessionId, provider, patient } = await connectActiveSession();
     registry.endSession(sessionId);
+
+    const patientReceived: unknown[] = [];
+    patient.on("peer:id", (payload) => patientReceived.push(payload));
 
     const error = waitForEvent<ErrorPayload>(provider, "error");
     provider.emit("peer:id", { peerId: "provider-peer-1" });
@@ -350,6 +353,7 @@ describe("peer:id", () => {
       code: "session_ended",
       message: expect.any(String),
     });
+    expect(patientReceived).toEqual([]);
   });
 
   it("rejects a malformed peer:id payload with invalid_message", async () => {
@@ -365,6 +369,15 @@ describe("peer:id", () => {
       message: expect.any(String),
     });
     expect(patientReceived).toEqual([]);
+  });
+
+  it("strips unknown keys from the payload before relaying it", async () => {
+    const { provider, patient } = await connectActiveSession();
+
+    const patientReceived = waitForEvent(patient, "peer:id");
+    provider.emit("peer:id", { peerId: "abc", extra: "nope" } as never);
+
+    await expect(patientReceived).resolves.toEqual({ peerId: "abc" });
   });
 
   it("leaves no row in the events table for a successful relay", async () => {
