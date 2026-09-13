@@ -52,6 +52,11 @@ export function useSession(baseUrl: string, key: string): UseSessionResult {
 
         const socket: AppSocket = io(baseUrl, { auth: { key } });
         socketRef.current = socket;
+        const hasConnectedRef = { current: false };
+
+        socket.on("connect", () => {
+          hasConnectedRef.current = true;
+        });
 
         socket.on("session:state", (payload) => {
           setConnection({ status: "connected", role: resolved.role, state: payload });
@@ -66,6 +71,13 @@ export function useSession(baseUrl: string, key: string): UseSessionResult {
         });
 
         socket.on("connect_error", (err) => {
+          if (hasConnectedRef.current) {
+            // socket.io-client also fires connect_error for a failed reconnection
+            // attempt, not only the initial handshake refusal. Once connected, the
+            // socket and peer connections fail independently, so this must not tear
+            // a live call down.
+            return;
+          }
           const payload = (err as Error & { data?: ErrorPayload }).data;
           setConnection({ status: "error", error: payload ?? GENERIC_ERROR });
         });

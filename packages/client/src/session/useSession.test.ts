@@ -95,6 +95,76 @@ describe("useSession", () => {
     );
   });
 
+  it("ignores a connect_error that arrives after the socket has connected", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { role: "provider", status: "CREATED" }));
+
+    const { result } = renderHook(() => useSession(BASE_URL, "pk"));
+    await waitFor(() => expect(handlers.has("connect")).toBe(true));
+
+    handlers.get("connect")?.(undefined);
+
+    const statePayload = {
+      state: "ACTIVE",
+      since: "2026-01-01T00:00:00.000Z",
+      reason: null,
+      presence: { provider: true, patient: true },
+    };
+    handlers.get("session:state")?.(statePayload);
+
+    await waitFor(() =>
+      expect(result.current.connection).toEqual({
+        status: "connected",
+        role: "provider",
+        state: statePayload,
+      }),
+    );
+
+    const err = Object.assign(new Error("transport close"), {
+      data: { code: "session_ended", message: "this session has ended" },
+    });
+    handlers.get("connect_error")?.(err);
+
+    expect(result.current.connection).toEqual({
+      status: "connected",
+      role: "provider",
+      state: statePayload,
+    });
+  });
+
+  it("still treats a server-sent error as terminal once connected", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { role: "provider", status: "CREATED" }));
+
+    const { result } = renderHook(() => useSession(BASE_URL, "pk"));
+    await waitFor(() => expect(handlers.has("connect")).toBe(true));
+
+    handlers.get("connect")?.(undefined);
+
+    const statePayload = {
+      state: "ACTIVE",
+      since: "2026-01-01T00:00:00.000Z",
+      reason: null,
+      presence: { provider: true, patient: true },
+    };
+    handlers.get("session:state")?.(statePayload);
+
+    await waitFor(() =>
+      expect(result.current.connection).toEqual({
+        status: "connected",
+        role: "provider",
+        state: statePayload,
+      }),
+    );
+
+    handlers.get("error")?.({ code: "session_ended", message: "this session has ended" });
+
+    await waitFor(() =>
+      expect(result.current.connection).toEqual({
+        status: "error",
+        error: { code: "session_ended", message: "this session has ended" },
+      }),
+    );
+  });
+
   it("emits admit, end-session, and patient:leave on the one socket", async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { role: "provider", status: "WAITING" }));
 
