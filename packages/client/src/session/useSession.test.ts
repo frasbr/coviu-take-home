@@ -176,4 +176,33 @@ describe("useSession", () => {
     expect(() => result.current.sendPeerId("abc")).not.toThrow();
     expect(emit).not.toHaveBeenCalled();
   });
+
+  it("keeps a stable identity for admit and sendPeerId across a re-render", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { role: "provider", status: "WAITING" }));
+
+    const { result } = renderHook(() => useSession(BASE_URL, "pk"));
+    await waitFor(() => expect(handlers.has("session:state")).toBe(true));
+
+    const admit = result.current.admit;
+    const sendPeerId = result.current.sendPeerId;
+
+    const statePayload = {
+      state: "WAITING",
+      since: "2026-01-01T00:00:00.000Z",
+      reason: null,
+      presence: { provider: true, patient: true },
+    };
+    handlers.get("session:state")?.(statePayload);
+
+    await waitFor(() =>
+      expect(result.current.connection).toEqual({
+        status: "connected",
+        role: "provider",
+        state: statePayload,
+      }),
+    );
+
+    expect(result.current.admit).toBe(admit);
+    expect(result.current.sendPeerId).toBe(sendPeerId);
+  });
 });

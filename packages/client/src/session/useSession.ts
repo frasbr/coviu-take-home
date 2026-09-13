@@ -5,7 +5,7 @@ import type {
   ServerToClientEvents,
   SessionStatePayload,
 } from "@coviu/shared";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { type Socket, io } from "socket.io-client";
 import { HttpError, createHttpClient } from "./httpClient.js";
 
@@ -87,12 +87,20 @@ export function useSession(baseUrl: string, key: string): UseSessionResult {
     };
   }, [baseUrl, key]);
 
+  const admit = useCallback(() => socketRef.current?.emit("admit", {}), []);
+  const endSession = useCallback(() => socketRef.current?.emit("end-session", {}), []);
+  const leave = useCallback(() => socketRef.current?.emit("patient:leave", {}), []);
+  const sendPeerId = useCallback(
+    (peerId: string) => socketRef.current?.emit("peer:id", { peerId }),
+    [],
+  );
+
   return {
     connection,
     remotePeerId,
-    admit: () => socketRef.current?.emit("admit", {}),
-    endSession: () => socketRef.current?.emit("end-session", {}),
-    leave: () => socketRef.current?.emit("patient:leave", {}),
-    sendPeerId: (peerId: string) => socketRef.current?.emit("peer:id", { peerId }),
+    admit,
+    endSession,
+    leave,
+    sendPeerId,
   };
 }
