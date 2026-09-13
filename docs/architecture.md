@@ -4,9 +4,6 @@ Status: proposed. It covers the take-home test in [brief.md](brief.md).
 
 This is the only design document. If the code and this document do not agree, one of the two has a defect. Correct it.
 
-Every design question in this document is decided. Section 8 lists where the repository does not
-match the document yet.
-
 ## 1. Scope and constraints
 
 The brief gives these constraints. The design obeys them.
