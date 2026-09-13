@@ -16,9 +16,11 @@ export type SessionConnection =
 
 export interface UseSessionResult {
   connection: SessionConnection;
+  remotePeerId: string | null;
   admit: () => void;
   endSession: () => void;
   leave: () => void;
+  sendPeerId: (peerId: string) => void;
 }
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -33,11 +35,13 @@ const GENERIC_ERROR: ErrorPayload = { code: "unknown_key", message: "could not j
  */
 export function useSession(baseUrl: string, key: string): UseSessionResult {
   const [connection, setConnection] = useState<SessionConnection>({ status: "resolving" });
+  const [remotePeerId, setRemotePeerId] = useState<string | null>(null);
   const socketRef = useRef<AppSocket | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setConnection({ status: "resolving" });
+    setRemotePeerId(null);
 
     createHttpClient(baseUrl)
       .getSession(key)
@@ -51,6 +55,10 @@ export function useSession(baseUrl: string, key: string): UseSessionResult {
 
         socket.on("session:state", (payload) => {
           setConnection({ status: "connected", role: resolved.role, state: payload });
+        });
+
+        socket.on("peer:id", (payload) => {
+          setRemotePeerId(payload.peerId);
         });
 
         socket.on("error", (payload) => {
@@ -81,8 +89,10 @@ export function useSession(baseUrl: string, key: string): UseSessionResult {
 
   return {
     connection,
+    remotePeerId,
     admit: () => socketRef.current?.emit("admit", {}),
     endSession: () => socketRef.current?.emit("end-session", {}),
     leave: () => socketRef.current?.emit("patient:leave", {}),
+    sendPeerId: (peerId: string) => socketRef.current?.emit("peer:id", { peerId }),
   };
 }

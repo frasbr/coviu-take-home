@@ -120,4 +120,60 @@ describe("useSession", () => {
 
     expect(disconnect).toHaveBeenCalled();
   });
+
+  it("is null before any peer:id arrives", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { role: "provider", status: "WAITING" }));
+
+    const { result } = renderHook(() => useSession(BASE_URL, "pk"));
+    await waitFor(() => expect(handlers.size).toBeGreaterThan(0));
+
+    expect(result.current.remotePeerId).toBeNull();
+  });
+
+  it("latches a peer:id that arrives before session:state", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { role: "provider", status: "WAITING" }));
+
+    const { result } = renderHook(() => useSession(BASE_URL, "pk"));
+    await waitFor(() => expect(handlers.has("peer:id")).toBe(true));
+
+    handlers.get("peer:id")?.({ peerId: "abc" });
+
+    await waitFor(() => expect(result.current.remotePeerId).toBe("abc"));
+
+    expect(result.current.connection).toEqual({ status: "resolving" });
+  });
+
+  it("replaces the remote peer id when a second peer:id arrives", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { role: "provider", status: "WAITING" }));
+
+    const { result } = renderHook(() => useSession(BASE_URL, "pk"));
+    await waitFor(() => expect(handlers.has("peer:id")).toBe(true));
+
+    handlers.get("peer:id")?.({ peerId: "abc" });
+    await waitFor(() => expect(result.current.remotePeerId).toBe("abc"));
+
+    handlers.get("peer:id")?.({ peerId: "def" });
+    await waitFor(() => expect(result.current.remotePeerId).toBe("def"));
+  });
+
+  it("emits peer:id on sendPeerId", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { role: "provider", status: "WAITING" }));
+
+    const { result } = renderHook(() => useSession(BASE_URL, "pk"));
+    await waitFor(() => expect(handlers.size).toBeGreaterThan(0));
+
+    result.current.sendPeerId("abc");
+
+    expect(emit).toHaveBeenCalledWith("peer:id", { peerId: "abc" });
+  });
+
+  it("sendPeerId before the socket exists is a silent no-op", () => {
+    vi.mocked(fetch).mockReturnValue(new Promise(() => {}));
+
+    const { result } = renderHook(() => useSession(BASE_URL, "pk"));
+
+    expect(result.current.connection).toEqual({ status: "resolving" });
+    expect(() => result.current.sendPeerId("abc")).not.toThrow();
+    expect(emit).not.toHaveBeenCalled();
+  });
 });
