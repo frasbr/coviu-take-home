@@ -5,6 +5,7 @@
     "backlog",
     "priority",
     "in-progress",
+    "review",
     "done"
   ]
 }
