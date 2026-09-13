@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import type { EndedReason, EventType, SessionStatus } from "@coviu/shared";
 
+const DEFAULT_GRACE_PERIOD_MS = 10 * 60 * 1000;
+
 export interface Presence {
   provider: boolean;
   patient: boolean;
@@ -9,6 +11,10 @@ export interface Presence {
 export interface SessionRegistryEntry {
   status: SessionStatus;
   presence: Presence;
+}
+
+interface InternalSessionEntry extends SessionRegistryEntry {
+  preDisconnectStatus?: SessionStatus;
 }
 
 export interface SessionTransitionEvent {
@@ -43,7 +49,14 @@ export declare interface SessionRegistry {
 
 // biome-ignore lint/suspicious/noUnsafeDeclarationMerging: declaration merge types EventEmitter's on/emit
 export class SessionRegistry extends EventEmitter {
-  private readonly sessions = new Map<string, SessionRegistryEntry>();
+  private readonly sessions = new Map<string, InternalSessionEntry>();
+  private readonly graceTimers = new Map<string, NodeJS.Timeout>();
+  private readonly gracePeriodMs: number;
+
+  constructor(options?: { gracePeriodMs?: number }) {
+    super();
+    this.gracePeriodMs = options?.gracePeriodMs ?? DEFAULT_GRACE_PERIOD_MS;
+  }
 
   createSession(sessionId: string): void {
     if (this.sessions.has(sessionId)) {
@@ -93,6 +106,75 @@ export class SessionRegistry extends EventEmitter {
     this.emit("presence", { sessionId, presence: { ...entry.presence } });
   }
 
+  /**
+   * Sets presence.provider false on a provider socket drop. WAITING/ACTIVE start a grace
+   * period during which the session's prior status is remembered for a reconnect to restore.
+   * CREATED has no timer (the documented limit: a session nobody opened only ends via the
+   * start-up sweep). ENDED and an in-progress grace period are no-ops.
+   */
+  providerDisconnected(sessionId: string): void {
+    const entry = this.requireEntry(sessionId);
+    if (entry.status === "ENDED" || entry.status === "DISCONNECTED_GRACE") {
+      return;
+    }
+
+    if (entry.status === "CREATED") {
+      entry.presence.provider = false;
+      this.emit("presence", { sessionId, presence: { ...entry.presence } });
+      return;
+    }
+
+    const from = entry.status;
+    entry.preDisconnectStatus = entry.status;
+    entry.status = "DISCONNECTED_GRACE";
+    entry.presence.provider = false;
+
+    this.emit("transition", {
+      sessionId,
+      from,
+      to: entry.status,
+      eventType: "provider_disconnected",
+      presence: { ...entry.presence },
+    });
+
+    this.scheduleGraceTimeout(sessionId);
+  }
+
+  private scheduleGraceTimeout(sessionId: string): void {
+    const timer = setTimeout(() => this.handleGraceTimeout(sessionId), this.gracePeriodMs);
+    timer.unref();
+    this.graceTimers.set(sessionId, timer);
+  }
+
+  private handleGraceTimeout(sessionId: string): void {
+    this.graceTimers.delete(sessionId);
+    const entry = this.sessions.get(sessionId);
+    if (!entry || entry.status !== "DISCONNECTED_GRACE") {
+      return;
+    }
+
+    this.emit("transition", {
+      sessionId,
+      from: entry.status,
+      to: entry.status,
+      eventType: "session_timed_out",
+      presence: { ...entry.presence },
+    });
+
+    const from = entry.status;
+    entry.status = "ENDED";
+    const endedReason: EndedReason = "timeout";
+
+    this.emit("transition", {
+      sessionId,
+      from,
+      to: entry.status,
+      eventType: "session_ended",
+      endedReason,
+      presence: { ...entry.presence },
+    });
+  }
+
   /** WAITING -> ACTIVE, on the provider's `admit`. */
   admit(sessionId: string): void {
     const entry = this.requireEntry(sessionId);
@@ -117,6 +199,12 @@ export class SessionRegistry extends EventEmitter {
     const entry = this.requireEntry(sessionId);
     if (entry.status === "ENDED") {
       throw new Error(`session ${sessionId} has already ended`);
+    }
+
+    const timer = this.graceTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.graceTimers.delete(sessionId);
     }
 
     const from = entry.status;
@@ -196,7 +284,7 @@ export class SessionRegistry extends EventEmitter {
     });
   }
 
-  private requireEntry(sessionId: string): SessionRegistryEntry {
+  private requireEntry(sessionId: string): InternalSessionEntry {
     const entry = this.sessions.get(sessionId);
     if (!entry) {
       throw new Error(`session ${sessionId} is not registered`);

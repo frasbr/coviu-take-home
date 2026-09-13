@@ -299,6 +299,143 @@ describe("patientLeft", () => {
   });
 });
 
+describe("providerDisconnected", () => {
+  it("moves an ACTIVE session to DISCONNECTED_GRACE and clears provider presence", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    registry.providerConnected("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.providerDisconnected("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "DISCONNECTED_GRACE",
+      presence: { provider: false, patient: true },
+    });
+    expect(listener).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      from: "ACTIVE",
+      to: "DISCONNECTED_GRACE",
+      eventType: "provider_disconnected",
+      presence: { provider: false, patient: true },
+    });
+  });
+
+  it("moves a WAITING session to DISCONNECTED_GRACE", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.providerDisconnected("session-1");
+
+    expect(registry.getSession("session-1")).toMatchObject({ status: "DISCONNECTED_GRACE" });
+    expect(listener).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      from: "WAITING",
+      to: "DISCONNECTED_GRACE",
+      eventType: "provider_disconnected",
+      presence: { provider: false, patient: true },
+    });
+  });
+
+  it("from CREATED clears provider presence, keeps status, and emits presence only", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.providerConnected("session-1");
+    const transitionListener = vi.fn();
+    const presenceListener = vi.fn();
+    registry.on("transition", transitionListener);
+    registry.on("presence", presenceListener);
+
+    registry.providerDisconnected("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "CREATED",
+      presence: { provider: false, patient: false },
+    });
+    expect(transitionListener).not.toHaveBeenCalled();
+    expect(presenceListener).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      presence: { provider: false, patient: false },
+    });
+  });
+
+  it("does nothing when the session has ENDED", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.endSession("session-1");
+    const transitionListener = vi.fn();
+    const presenceListener = vi.fn();
+    registry.on("transition", transitionListener);
+    registry.on("presence", presenceListener);
+
+    registry.providerDisconnected("session-1");
+
+    expect(registry.getSession("session-1")).toMatchObject({ status: "ENDED" });
+    expect(transitionListener).not.toHaveBeenCalled();
+    expect(presenceListener).not.toHaveBeenCalled();
+  });
+
+  it("throws for a session id that is not registered", () => {
+    const registry = new SessionRegistry();
+    expect(() => registry.providerDisconnected("no-such-session")).toThrow();
+  });
+
+  it("ends the session with reason timeout after the grace period elapses, in event order", async () => {
+    const registry = new SessionRegistry({ gracePeriodMs: 5 });
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    const events: string[] = [];
+    registry.on("transition", (event) => events.push(event.eventType));
+
+    registry.providerDisconnected("session-1");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(registry.getSession("session-1")).toMatchObject({ status: "ENDED" });
+    expect(events).toEqual(["provider_disconnected", "session_timed_out", "session_ended"]);
+  });
+
+  it("is a no-op while already DISCONNECTED_GRACE, and does not restart the timer", async () => {
+    const gracePeriodMs = 15;
+    const setTimeoutSpy = vi.spyOn(global, "setTimeout");
+    const graceTimerCalls = () =>
+      setTimeoutSpy.mock.calls.filter((call) => call[1] === gracePeriodMs).length;
+
+    const registry = new SessionRegistry({ gracePeriodMs });
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    registry.providerDisconnected("session-1");
+
+    expect(graceTimerCalls()).toBe(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const listener = vi.fn();
+    registry.on("transition", listener);
+    registry.providerDisconnected("session-1");
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(graceTimerCalls()).toBe(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(registry.getSession("session-1")).toMatchObject({ status: "ENDED" });
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: "session_timed_out" }),
+    );
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ eventType: "session_ended" }));
+
+    setTimeoutSpy.mockRestore();
+  });
+});
+
 describe("patientDisconnected", () => {
   it("sets presence.patient false without changing the session status", () => {
     const registry = new SessionRegistry();
