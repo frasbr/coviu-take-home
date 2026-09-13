@@ -76,3 +76,35 @@ describe("getSession", () => {
     expect(fetch).toHaveBeenCalledWith(`${BASE_URL}/api/sessions/a%2Fb%20c`);
   });
 });
+
+describe("getSessionEvents", () => {
+  it("GETs /api/sessions/:providerKey/events and returns the parsed events", async () => {
+    const body = {
+      events: [
+        { id: 1, type: "session_created", occurredAt: "2024-01-01T00:00:00.000Z", data: null },
+        {
+          id: 2,
+          type: "patient_joined_waiting_room",
+          occurredAt: "2024-01-01T00:00:05.000Z",
+          data: null,
+        },
+      ],
+    };
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, body));
+
+    const result = await createHttpClient(BASE_URL).getSessionEvents("pk");
+
+    expect(result).toEqual(body);
+    expect(fetch).toHaveBeenCalledWith(`${BASE_URL}/api/sessions/pk/events`);
+  });
+
+  it("throws HttpError with unknown_key for a 404", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse(404, { code: "unknown_key", message: "no session has that key" }),
+    );
+
+    await expect(createHttpClient(BASE_URL).getSessionEvents("nope")).rejects.toMatchObject(
+      new HttpError({ code: "unknown_key", message: "no session has that key" }),
+    );
+  });
+});

@@ -3,6 +3,8 @@ import {
   CreateSessionResponseSchema,
   type ErrorPayload,
   ErrorPayloadSchema,
+  type GetSessionEventsResponse,
+  GetSessionEventsResponseSchema,
   type GetSessionResponse,
   GetSessionResponseSchema,
 } from "@coviu/shared";
@@ -20,6 +22,7 @@ export class HttpError extends Error {
 export interface HttpClient {
   createSession(): Promise<CreateSessionResponse>;
   getSession(key: string): Promise<GetSessionResponse>;
+  getSessionEvents(providerKey: string): Promise<GetSessionEventsResponse>;
 }
 
 async function parseErrorBody(res: Response): Promise<ErrorPayload> {
@@ -51,6 +54,14 @@ export function createHttpClient(baseUrl: string): HttpClient {
         throw new HttpError(await parseErrorBody(res));
       }
       return GetSessionResponseSchema.parse(await res.json());
+    },
+
+    async getSessionEvents(providerKey: string): Promise<GetSessionEventsResponse> {
+      const res = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(providerKey)}/events`);
+      if (!res.ok) {
+        throw new HttpError(await parseErrorBody(res));
+      }
+      return GetSessionEventsResponseSchema.parse(await res.json());
     },
   };
 }
