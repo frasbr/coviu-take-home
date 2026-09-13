@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { createBrowserPeer } from "../media/peerFactory.js";
 import { useMedia } from "../media/useMedia.js";
 import { useSession } from "../session/useSession.js";
+import { useSessionEvents } from "../session/useSessionEvents.js";
 import { VideoPanel } from "./VideoPanel.js";
 
 export interface ProviderViewProps {
@@ -18,6 +19,9 @@ export function ProviderView({ baseUrl, sessionKey }: ProviderViewProps) {
   // Derived from the session state alone: the two connections fail independently,
   // so a socket reconnect must not tear a live call down.
   const active = connection.status === "connected" && connection.state.state === "ACTIVE";
+  const ended = connection.status === "connected" && connection.state.state === "ENDED";
+
+  const eventsResult = useSessionEvents(baseUrl, sessionKey, ended);
 
   const { localStream, remoteStream, localPeerId, error, callPeer } = useMedia({
     active,
@@ -69,7 +73,29 @@ export function ProviderView({ baseUrl, sessionKey }: ProviderViewProps) {
           End session
         </button>
       )}
-      <VideoPanel localStream={localStream} remoteStream={remoteStream} error={error} />
+      {state.state === "ENDED" && (
+        <section aria-label="Session history">
+          <h2>Session history</h2>
+          {eventsResult.status === "loading" && <p>Loading session history…</p>}
+          {eventsResult.status === "error" && <p role="alert">{eventsResult.message}</p>}
+          {eventsResult.status === "loaded" && (
+            <ul>
+              {eventsResult.events.map((event) => (
+                <li key={event.id}>
+                  {new Date(event.occurredAt).toLocaleString()} — {event.type}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+      <VideoPanel
+        localStream={localStream}
+        remoteStream={remoteStream}
+        error={error}
+        localRole="Provider"
+        remoteRole="Patient"
+      />
     </div>
   );
 }

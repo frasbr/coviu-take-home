@@ -57,7 +57,13 @@ export function PatientView({ baseUrl, sessionKey }: PatientViewProps) {
           Leave
         </button>
       )}
-      <VideoPanel localStream={localStream} remoteStream={remoteStream} error={error} />
+      <VideoPanel
+        localStream={localStream}
+        remoteStream={remoteStream}
+        error={error}
+        localRole="Patient"
+        remoteRole="Provider"
+      />
     </div>
   );
 }

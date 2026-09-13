@@ -15,6 +15,21 @@ function video(label: string) {
 afterEach(cleanup);
 
 describe("VideoPanel", () => {
+  it("labels each video feed with its role", () => {
+    render(
+      <VideoPanel
+        localStream={null}
+        remoteStream={null}
+        error={null}
+        localRole="Patient"
+        remoteRole="Provider"
+      />,
+    );
+
+    expect(screen.getByText("Patient")).toBeInTheDocument();
+    expect(screen.getByText("Provider")).toBeInTheDocument();
+  });
+
   it("mutes the local video and leaves the remote video unmuted", () => {
     render(<VideoPanel localStream={null} remoteStream={null} error={null} />);
 

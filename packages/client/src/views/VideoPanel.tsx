@@ -4,6 +4,8 @@ export interface VideoPanelProps {
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   error: string | null;
+  localRole?: string;
+  remoteRole?: string;
 }
 
 const VIDEO_WIDTH = 320;
@@ -24,22 +26,40 @@ function useSrcObject(stream: MediaStream | null) {
   return ref;
 }
 
-export function VideoPanel({ localStream, remoteStream, error }: VideoPanelProps) {
+export function VideoPanel({
+  localStream,
+  remoteStream,
+  error,
+  localRole,
+  remoteRole,
+}: VideoPanelProps) {
   const remoteRef = useSrcObject(remoteStream);
   const localRef = useSrcObject(localStream);
 
   return (
     <div>
       {error && <p role="alert">{error}</p>}
-      <video ref={remoteRef} aria-label="Remote video" autoPlay playsInline width={VIDEO_WIDTH} />
-      <video
-        ref={localRef}
-        aria-label="Local video"
-        autoPlay
-        playsInline
-        muted
-        width={VIDEO_WIDTH}
-      />
+      <div>
+        {remoteRole && <span>{remoteRole}</span>}
+        <video
+          ref={remoteRef}
+          aria-label="Remote video"
+          autoPlay
+          playsInline
+          width={VIDEO_WIDTH}
+        />
+      </div>
+      <div>
+        {localRole && <span>{localRole}</span>}
+        <video
+          ref={localRef}
+          aria-label="Local video"
+          autoPlay
+          playsInline
+          muted
+          width={VIDEO_WIDTH}
+        />
+      </div>
     </div>
   );
 }

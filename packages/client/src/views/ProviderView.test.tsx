@@ -8,9 +8,12 @@ import type { UseMediaResult } from "../media/useMedia.js";
 import { useMedia } from "../media/useMedia.js";
 import type { SessionConnection } from "../session/useSession.js";
 import { useSession } from "../session/useSession.js";
+import type { SessionEventsResult } from "../session/useSessionEvents.js";
+import { useSessionEvents } from "../session/useSessionEvents.js";
 import { ProviderView } from "./ProviderView.js";
 
 vi.mock("../session/useSession.js", () => ({ useSession: vi.fn() }));
+vi.mock("../session/useSessionEvents.js", () => ({ useSessionEvents: vi.fn() }));
 vi.mock("../media/useMedia.js", () => ({ useMedia: vi.fn() }));
 vi.mock("../media/peerFactory.js", () => ({ createBrowserPeer: vi.fn() }));
 
@@ -42,6 +45,10 @@ function mockMedia(overrides: Partial<UseMediaResult> = {}) {
   });
 }
 
+function mockEvents(result: SessionEventsResult) {
+  vi.mocked(useSessionEvents).mockReturnValue(result);
+}
+
 function providerIn(state: SessionStatePayload["state"]): SessionConnection {
   return {
     status: "connected",
@@ -57,6 +64,7 @@ function providerIn(state: SessionStatePayload["state"]): SessionConnection {
 
 beforeEach(() => {
   mockMedia();
+  mockEvents({ status: "idle" });
 });
 
 afterEach(() => {
@@ -138,6 +146,56 @@ describe("ProviderView", () => {
     render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
 
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("fetches the event log only once ENDED", () => {
+    mockConnection(providerIn("ACTIVE"));
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(useSessionEvents).toHaveBeenCalledWith("https://example.test", "pk", false);
+  });
+
+  it("shows a loading state for the event log while ENDED", () => {
+    mockConnection(providerIn("ENDED"));
+    mockEvents({ status: "loading" });
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(useSessionEvents).toHaveBeenCalledWith("https://example.test", "pk", true);
+    expect(screen.getByText("Loading session history…")).toBeVisible();
+  });
+
+  it("lists the events once loaded", () => {
+    mockConnection(providerIn("ENDED"));
+    mockEvents({
+      status: "loaded",
+      events: [
+        { id: 1, type: "session_created", occurredAt: "2026-01-01T00:00:00.000Z", data: null },
+        {
+          id: 2,
+          type: "session_ended",
+          occurredAt: "2026-01-01T00:05:00.000Z",
+          data: { reason: "provider_ended" },
+        },
+      ],
+    });
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    const items = screen.getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent("session_created");
+    expect(items[1]).toHaveTextContent("session_ended");
+  });
+
+  it("shows an error if the event log fails to load", () => {
+    mockConnection(providerIn("ENDED"));
+    mockEvents({ status: "error", message: "no session has that key" });
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("no session has that key");
   });
 
   it("activates media only once the session is ACTIVE", () => {
