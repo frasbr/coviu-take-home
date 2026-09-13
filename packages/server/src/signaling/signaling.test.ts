@@ -473,8 +473,53 @@ describe("patient presence across a socket drop", () => {
     const resolved = services.resolveKey(created.providerKey);
     expect(resolved).toBeDefined();
     expect(registry.getSession(resolved?.sessionId ?? "")).toMatchObject({
-      status: "WAITING",
+      status: "DISCONNECTED_GRACE",
       presence: { patient: true },
+    });
+  });
+});
+
+describe("provider presence across a socket drop", () => {
+  it("reports DISCONNECTED_GRACE to the patient when the provider socket drops", async () => {
+    const { patient, provider } = await connectActiveSession();
+
+    const patientUpdate = waitForEvent<SessionStatePayload>(patient, "session:state");
+    provider.close();
+
+    await expect(patientUpdate).resolves.toMatchObject({
+      state: "DISCONNECTED_GRACE",
+      presence: { provider: false, patient: true },
+    });
+  });
+
+  it("restores ACTIVE and presence.provider when a fresh provider socket reconnects", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const sessionId = services.resolveKey(created.providerKey)?.sessionId;
+    if (!sessionId) {
+      throw new Error("expected the provider key to resolve");
+    }
+
+    const providerUpdate = waitForEvent(provider, "session:state");
+    const patientUpdate = waitForEvent(patient, "session:state");
+    registry.admit(sessionId);
+    await providerUpdate;
+    await patientUpdate;
+
+    const gone = waitForEvent<SessionStatePayload>(patient, "session:state");
+    provider.close();
+    await gone;
+
+    const back = waitForEvent<SessionStatePayload>(patient, "session:state");
+    connect(created.providerKey);
+
+    await expect(back).resolves.toMatchObject({
+      state: "ACTIVE",
+      presence: { provider: true, patient: true },
     });
   });
 });

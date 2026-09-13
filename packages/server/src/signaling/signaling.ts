@@ -219,6 +219,12 @@ export function attachSignaling(
           registry.patientDisconnected(sessionId);
         }
       }
+
+      if (role === "provider") {
+        if (registry.getSession(sessionId)) {
+          registry.providerDisconnected(sessionId);
+        }
+      }
     });
   });
 
