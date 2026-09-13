@@ -71,14 +71,15 @@ export function useSession(baseUrl: string, key: string): UseSessionResult {
         });
 
         socket.on("connect_error", (err) => {
-          if (hasConnectedRef.current) {
+          const payload = (err as Error & { data?: ErrorPayload }).data;
+          if (hasConnectedRef.current && !payload) {
             // socket.io-client also fires connect_error for a failed reconnection
             // attempt, not only the initial handshake refusal. Once connected, the
-            // socket and peer connections fail independently, so this must not tear
-            // a live call down.
+            // socket and peer connections fail independently, so a payload-less
+            // connect_error must not tear a live call down. A payload-carrying one
+            // is a middleware refusal and is always terminal.
             return;
           }
-          const payload = (err as Error & { data?: ErrorPayload }).data;
           setConnection({ status: "error", error: payload ?? GENERIC_ERROR });
         });
       })

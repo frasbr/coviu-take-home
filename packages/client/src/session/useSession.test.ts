@@ -119,9 +119,7 @@ describe("useSession", () => {
       }),
     );
 
-    const err = Object.assign(new Error("transport close"), {
-      data: { code: "session_ended", message: "this session has ended" },
-    });
+    const err = new Error("transport close");
     handlers.get("connect_error")?.(err);
 
     expect(result.current.connection).toEqual({
@@ -129,6 +127,43 @@ describe("useSession", () => {
       role: "provider",
       state: statePayload,
     });
+  });
+
+  it("treats a connect_error carrying a payload as terminal even after connecting", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { role: "provider", status: "CREATED" }));
+
+    const { result } = renderHook(() => useSession(BASE_URL, "pk"));
+    await waitFor(() => expect(handlers.has("connect")).toBe(true));
+
+    handlers.get("connect")?.(undefined);
+
+    const statePayload = {
+      state: "DISCONNECTED_GRACE",
+      since: "2026-01-01T00:00:00.000Z",
+      reason: null,
+      presence: { provider: false, patient: true },
+    };
+    handlers.get("session:state")?.(statePayload);
+
+    await waitFor(() =>
+      expect(result.current.connection).toEqual({
+        status: "connected",
+        role: "provider",
+        state: statePayload,
+      }),
+    );
+
+    const err = Object.assign(new Error("refused"), {
+      data: { code: "session_ended", message: "this session has ended" },
+    });
+    handlers.get("connect_error")?.(err);
+
+    await waitFor(() =>
+      expect(result.current.connection).toEqual({
+        status: "error",
+        error: { code: "session_ended", message: "this session has ended" },
+      }),
+    );
   });
 
   it("still treats a server-sent error as terminal once connected", async () => {
