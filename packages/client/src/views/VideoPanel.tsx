@@ -41,13 +41,7 @@ export function VideoPanel({
       {error && <p role="alert">{error}</p>}
       <div>
         {remoteRole && <span>{remoteRole}</span>}
-        <video
-          ref={remoteRef}
-          aria-label="Remote video"
-          autoPlay
-          playsInline
-          width={VIDEO_WIDTH}
-        />
+        <video ref={remoteRef} aria-label="Remote video" autoPlay playsInline width={VIDEO_WIDTH} />
       </div>
       <div>
         {localRole && <span>{localRole}</span>}
