@@ -4,6 +4,7 @@ import {
   EndSessionPayloadSchema,
   type ErrorPayload,
   PatientLeavePayloadSchema,
+  PeerIdPayloadSchema,
   type Role,
   type ServerToClientEvents,
   type SessionStatus,
@@ -52,6 +53,7 @@ const PATIENT_LEAVE_ALLOWED_STATES: readonly SessionStatus[] = [
   "ACTIVE",
   "DISCONNECTED_GRACE",
 ];
+const PEER_ID_ALLOWED_STATES: readonly SessionStatus[] = ["ACTIVE"];
 
 export function attachSignaling(
   io: AppServer,
@@ -93,18 +95,19 @@ export function attachSignaling(
   });
 
   /**
-   * Checks role and current-state legality for a provider- or patient-only message.
-   * Sends the matching error and returns false when the message should be dropped;
+   * Checks role and current-state legality for a message. Pass `null` for
+   * `requiredRole` when the message is legal for either role. Sends the
+   * matching error and returns false when the message should be dropped;
    * the caller only runs the registry command on true.
    */
   function checkLegal(
     socket: AppSocket,
-    requiredRole: Role,
+    requiredRole: Role | null,
     allowedStates: readonly SessionStatus[],
   ): boolean {
     const { sessionId, role } = socket.data;
 
-    if (role !== requiredRole) {
+    if (requiredRole !== null && role !== requiredRole) {
       sendSocketError(socket, "not_allowed_in_state", `only the ${requiredRole} can do that`);
       return false;
     }
@@ -180,6 +183,17 @@ export function attachSignaling(
       }
       if (checkLegal(socket, "patient", PATIENT_LEAVE_ALLOWED_STATES)) {
         registry.patientLeft(sessionId);
+      }
+    });
+
+    socket.on("peer:id", (payload) => {
+      const parsed = PeerIdPayloadSchema.safeParse(payload);
+      if (!parsed.success) {
+        sendSocketError(socket, "invalid_message", "invalid peer:id payload");
+        return;
+      }
+      if (checkLegal(socket, null, PEER_ID_ALLOWED_STATES)) {
+        socket.to(roomName(sessionId)).emit("peer:id", parsed.data);
       }
     });
 

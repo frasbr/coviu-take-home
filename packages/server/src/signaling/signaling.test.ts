@@ -22,6 +22,7 @@ let io: Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, Soc
 let registry: SessionRegistry;
 let services: SessionService;
 let baseUrl: string;
+let db: DatabaseSync;
 const sockets: ClientSocket[] = [];
 
 function connect(key: string): ClientSocket {
@@ -35,7 +36,7 @@ function waitForEvent<T>(socket: ClientSocket, event: string): Promise<T> {
 }
 
 beforeEach(async () => {
-  const db = new DatabaseSync(":memory:");
+  db = new DatabaseSync(":memory:");
   applySchema(db);
   const repository = createSqliteSessionRepository(db);
   registry = new SessionRegistry();
@@ -265,5 +266,116 @@ describe("patient:leave", () => {
       code: "session_ended",
       message: expect.any(String),
     });
+  });
+});
+
+async function connectActiveSession(): Promise<{
+  sessionId: string;
+  provider: ClientSocket;
+  patient: ClientSocket;
+}> {
+  const created = services.createSession();
+  const provider = connect(created.providerKey);
+  await waitForEvent(provider, "session:state");
+  const patient = connect(created.patientKey);
+  await waitForEvent(patient, "session:state");
+
+  const sessionId = services.resolveKey(created.providerKey)?.sessionId;
+  if (!sessionId) {
+    throw new Error("expected the provider key to resolve");
+  }
+
+  const providerUpdate = waitForEvent(provider, "session:state");
+  const patientUpdate = waitForEvent(patient, "session:state");
+  registry.admit(sessionId);
+  await providerUpdate;
+  await patientUpdate;
+
+  return { sessionId, provider, patient };
+}
+
+describe("peer:id", () => {
+  it("relays a peer:id from the provider to the patient, and not back to the provider", async () => {
+    const { provider, patient } = await connectActiveSession();
+    const providerReceived: unknown[] = [];
+    provider.on("peer:id", (payload) => providerReceived.push(payload));
+
+    const patientReceived = waitForEvent(patient, "peer:id");
+    provider.emit("peer:id", { peerId: "provider-peer-1" });
+
+    await expect(patientReceived).resolves.toEqual({ peerId: "provider-peer-1" });
+    expect(providerReceived).toEqual([]);
+  });
+
+  it("relays a peer:id from the patient to the provider, and not back to the patient", async () => {
+    const { provider, patient } = await connectActiveSession();
+    const patientReceived: unknown[] = [];
+    patient.on("peer:id", (payload) => patientReceived.push(payload));
+
+    const providerReceived = waitForEvent(provider, "peer:id");
+    patient.emit("peer:id", { peerId: "patient-peer-1" });
+
+    await expect(providerReceived).resolves.toEqual({ peerId: "patient-peer-1" });
+    expect(patientReceived).toEqual([]);
+  });
+
+  it("rejects peer:id in WAITING with not_allowed_in_state", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const patientReceived: unknown[] = [];
+    patient.on("peer:id", (payload) => patientReceived.push(payload));
+
+    const error = waitForEvent<ErrorPayload>(provider, "error");
+    provider.emit("peer:id", { peerId: "provider-peer-1" });
+
+    await expect(error).resolves.toEqual({
+      code: "not_allowed_in_state",
+      message: expect.any(String),
+    });
+    expect(patientReceived).toEqual([]);
+  });
+
+  it("rejects peer:id once the session has ended, with session_ended", async () => {
+    const { sessionId, provider } = await connectActiveSession();
+    registry.endSession(sessionId);
+
+    const error = waitForEvent<ErrorPayload>(provider, "error");
+    provider.emit("peer:id", { peerId: "provider-peer-1" });
+
+    await expect(error).resolves.toEqual({
+      code: "session_ended",
+      message: expect.any(String),
+    });
+  });
+
+  it("rejects a malformed peer:id payload with invalid_message", async () => {
+    const { provider, patient } = await connectActiveSession();
+    const patientReceived: unknown[] = [];
+    patient.on("peer:id", (payload) => patientReceived.push(payload));
+
+    const error = waitForEvent<ErrorPayload>(provider, "error");
+    provider.emit("peer:id", { peerId: 42 });
+
+    await expect(error).resolves.toEqual({
+      code: "invalid_message",
+      message: expect.any(String),
+    });
+    expect(patientReceived).toEqual([]);
+  });
+
+  it("leaves no row in the events table for a successful relay", async () => {
+    const { provider, patient } = await connectActiveSession();
+    const before = db.prepare("select count(*) as n from events").get() as { n: number };
+
+    const patientReceived = waitForEvent(patient, "peer:id");
+    provider.emit("peer:id", { peerId: "provider-peer-1" });
+    await patientReceived;
+
+    const after = db.prepare("select count(*) as n from events").get() as { n: number };
+    expect(after.n).toEqual(before.n);
   });
 });
