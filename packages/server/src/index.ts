@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import type { ClientToServerEvents, ServerToClientEvents } from "@coviu/shared";
+import { ExpressPeerServer } from "peer";
 import type { DefaultEventsMap } from "socket.io";
 import { Server } from "socket.io";
 import { attachEventRecorder } from "./eventRecorder/eventRecorder.js";
@@ -24,6 +25,14 @@ sessionService.endInterruptedSessions();
 
 const app = createHttpApp(sessionService, CLIENT_URL);
 const server = createServer(app);
+
+app.use(
+  "/peerjs",
+  ExpressPeerServer(server, {
+    allow_discovery: false,
+    corsOptions: { origin: CLIENT_URL },
+  }),
+);
 
 const io = new Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>(
   server,
