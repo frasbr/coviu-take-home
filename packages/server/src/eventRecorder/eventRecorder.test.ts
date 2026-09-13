@@ -56,4 +56,21 @@ describe("attachEventRecorder", () => {
       patientKey: "patient-key-1",
     });
   });
+
+  it("records the reason and sets endedAt and endedReason on a session_ended transition", () => {
+    registry.endSession("session-1");
+
+    const events = repository.getEvents("session-1");
+    expect(events.at(-1)).toMatchObject({
+      type: "session_ended",
+      data: { reason: "provider_ended" },
+    });
+
+    const session = repository.getSession("session-1");
+    expect(session).toMatchObject({
+      status: "ENDED",
+      endedReason: "provider_ended",
+      endedAt: expect.any(String),
+    });
+  });
 });

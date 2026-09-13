@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { EventType, SessionStatus } from "@coviu/shared";
+import type { EndedReason, EventType, SessionStatus } from "@coviu/shared";
 
 export interface Presence {
   provider: boolean;
@@ -16,11 +16,18 @@ export interface SessionTransitionEvent {
   from: SessionStatus;
   to: SessionStatus;
   eventType: EventType;
+  endedReason?: EndedReason;
+  presence: Presence;
+}
+
+export interface SessionPresenceEvent {
+  sessionId: string;
   presence: Presence;
 }
 
 interface SessionRegistryEventMap {
   transition: [SessionTransitionEvent];
+  presence: [SessionPresenceEvent];
 }
 
 export declare interface SessionRegistry {
@@ -55,10 +62,7 @@ export class SessionRegistry extends EventEmitter {
   }
 
   patientConnected(sessionId: string): void {
-    const entry = this.sessions.get(sessionId);
-    if (!entry) {
-      throw new Error(`session ${sessionId} is not registered`);
-    }
+    const entry = this.requireEntry(sessionId);
     if (entry.status !== "CREATED") {
       throw new Error(
         `session ${sessionId} cannot accept a patient connection in state ${entry.status}`,
@@ -76,5 +80,82 @@ export class SessionRegistry extends EventEmitter {
       eventType: "patient_joined_waiting_room",
       presence: { ...entry.presence },
     });
+  }
+
+  /** Sets presence.provider (architecture.md §4.3). Idempotent, and no state transition. */
+  providerConnected(sessionId: string): void {
+    const entry = this.requireEntry(sessionId);
+    if (entry.presence.provider) {
+      return;
+    }
+
+    entry.presence.provider = true;
+    this.emit("presence", { sessionId, presence: { ...entry.presence } });
+  }
+
+  /** WAITING -> ACTIVE, on the provider's `admit` (architecture.md §3). */
+  admit(sessionId: string): void {
+    const entry = this.requireEntry(sessionId);
+    if (entry.status !== "WAITING") {
+      throw new Error(`session ${sessionId} cannot be admitted in state ${entry.status}`);
+    }
+
+    const from = entry.status;
+    entry.status = "ACTIVE";
+
+    this.emit("transition", {
+      sessionId,
+      from,
+      to: entry.status,
+      eventType: "patient_admitted",
+      presence: { ...entry.presence },
+    });
+  }
+
+  /** Any state but ENDED -> ENDED, on the provider's `end-session` (architecture.md §3). */
+  endSession(sessionId: string): void {
+    const entry = this.requireEntry(sessionId);
+    if (entry.status === "ENDED") {
+      throw new Error(`session ${sessionId} has already ended`);
+    }
+
+    const from = entry.status;
+    entry.status = "ENDED";
+    const endedReason: EndedReason = "provider_ended";
+
+    this.emit("transition", {
+      sessionId,
+      from,
+      to: entry.status,
+      eventType: "session_ended",
+      endedReason,
+      presence: { ...entry.presence },
+    });
+  }
+
+  /** Sets presence.patient false on `patient:leave` (architecture.md §4.3). The session does not end. */
+  patientLeft(sessionId: string): void {
+    const entry = this.requireEntry(sessionId);
+    if (entry.status === "CREATED" || entry.status === "ENDED") {
+      throw new Error(`patient cannot leave session ${sessionId} in state ${entry.status}`);
+    }
+
+    entry.presence.patient = false;
+
+    this.emit("transition", {
+      sessionId,
+      from: entry.status,
+      to: entry.status,
+      eventType: "patient_left",
+      presence: { ...entry.presence },
+    });
+  }
+
+  private requireEntry(sessionId: string): SessionRegistryEntry {
+    const entry = this.sessions.get(sessionId);
+    if (!entry) {
+      throw new Error(`session ${sessionId} is not registered`);
+    }
+    return entry;
   }
 }

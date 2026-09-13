@@ -89,7 +89,7 @@ describe("handshake middleware", () => {
     expect(error.data).toEqual({ code: "session_ended", message: expect.any(String) });
   });
 
-  it("accepts a valid provider key and emits session:state", async () => {
+  it("accepts a valid provider key, marks the provider present, and emits session:state", async () => {
     const created = services.createSession();
     const socket = connect(created.providerKey);
 
@@ -98,7 +98,7 @@ describe("handshake middleware", () => {
     expect(state).toMatchObject({
       state: "CREATED",
       reason: null,
-      presence: { provider: false, patient: false },
+      presence: { provider: true, patient: false },
     });
   });
 
@@ -115,6 +115,155 @@ describe("handshake middleware", () => {
     await expect(providerStateUpdate).resolves.toMatchObject({
       state: "WAITING",
       presence: { patient: true },
+    });
+  });
+
+  it("broadcasts presence.provider to a patient already in the room", async () => {
+    const created = services.createSession();
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const patientStateUpdate = waitForEvent<SessionStatePayload>(patient, "session:state");
+    connect(created.providerKey);
+
+    await expect(patientStateUpdate).resolves.toMatchObject({
+      presence: { provider: true, patient: true },
+    });
+  });
+});
+
+describe("admit", () => {
+  it("moves WAITING to ACTIVE and broadcasts to both sockets", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const providerUpdate = waitForEvent<SessionStatePayload>(provider, "session:state");
+    const patientUpdate = waitForEvent<SessionStatePayload>(patient, "session:state");
+    provider.emit("admit", {});
+
+    await expect(providerUpdate).resolves.toMatchObject({ state: "ACTIVE" });
+    await expect(patientUpdate).resolves.toMatchObject({ state: "ACTIVE" });
+  });
+
+  it("rejects admit from the patient with not_allowed_in_state", async () => {
+    const created = services.createSession();
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const error = waitForEvent<ErrorPayload>(patient, "error");
+    patient.emit("admit", {});
+
+    await expect(error).resolves.toEqual({
+      code: "not_allowed_in_state",
+      message: expect.any(String),
+    });
+  });
+
+  it("rejects admit in CREATED with not_allowed_in_state", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+
+    const error = waitForEvent<ErrorPayload>(provider, "error");
+    provider.emit("admit", {});
+
+    await expect(error).resolves.toEqual({
+      code: "not_allowed_in_state",
+      message: expect.any(String),
+    });
+  });
+});
+
+describe("end-session", () => {
+  it("moves any non-ENDED state to ENDED with reason provider_ended, broadcast to both sockets", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const providerUpdate = waitForEvent<SessionStatePayload>(provider, "session:state");
+    const patientUpdate = waitForEvent<SessionStatePayload>(patient, "session:state");
+    provider.emit("end-session", {});
+
+    await expect(providerUpdate).resolves.toMatchObject({
+      state: "ENDED",
+      reason: "provider_ended",
+    });
+    await expect(patientUpdate).resolves.toMatchObject({
+      state: "ENDED",
+      reason: "provider_ended",
+    });
+  });
+
+  it("rejects end-session from the patient with not_allowed_in_state", async () => {
+    const created = services.createSession();
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const error = waitForEvent<ErrorPayload>(patient, "error");
+    patient.emit("end-session", {});
+
+    await expect(error).resolves.toEqual({
+      code: "not_allowed_in_state",
+      message: expect.any(String),
+    });
+  });
+});
+
+describe("patient:leave", () => {
+  it("sets presence.patient false without ending the session, broadcast to both sockets", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const providerUpdate = waitForEvent<SessionStatePayload>(provider, "session:state");
+    patient.emit("patient:leave", {});
+
+    await expect(providerUpdate).resolves.toMatchObject({
+      state: "WAITING",
+      presence: { provider: true, patient: false },
+    });
+  });
+
+  it("rejects patient:leave from the provider with not_allowed_in_state", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const error = waitForEvent<ErrorPayload>(provider, "error");
+    provider.emit("patient:leave", {});
+
+    await expect(error).resolves.toEqual({
+      code: "not_allowed_in_state",
+      message: expect.any(String),
+    });
+  });
+
+  it("rejects patient:leave once the session has ended, with session_ended", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const patientEndedUpdate = waitForEvent(patient, "session:state");
+    provider.emit("end-session", {});
+    await patientEndedUpdate;
+
+    const error = waitForEvent<ErrorPayload>(patient, "error");
+    patient.emit("patient:leave", {});
+
+    await expect(error).resolves.toEqual({
+      code: "session_ended",
+      message: expect.any(String),
     });
   });
 });
