@@ -11,11 +11,12 @@ import { createHttpApp } from "./http.js";
 
 let server: Server;
 let baseUrl: string;
+let repository: ReturnType<typeof createSqliteSessionRepository>;
 
 beforeEach(async () => {
   const db = new DatabaseSync(":memory:");
   applySchema(db);
-  const repository = createSqliteSessionRepository(db);
+  repository = createSqliteSessionRepository(db);
   const registry = new SessionRegistry();
   const services = createSessionService(repository, registry, "https://example.test");
 
@@ -85,5 +86,72 @@ describe("GET /api/sessions/:key", () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ code: "unknown_key", message: expect.any(String) });
+  });
+});
+
+describe("GET /api/sessions/:providerKey/events", () => {
+  it("returns the event log for a provider key, in order, and not shadowed by GET /api/sessions/:key", async () => {
+    const created = (await (
+      await fetch(`${baseUrl}/api/sessions`, { method: "POST" })
+    ).json()) as CreateSessionResponse;
+    const session = repository.getSessionByKey(created.providerKey);
+    if (!session) {
+      throw new Error("expected the session created above to exist");
+    }
+    repository.recordEvent(session.id, "patient_joined_waiting_room");
+
+    const response = await fetch(`${baseUrl}/api/sessions/${created.providerKey}/events`);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({
+      events: [
+        expect.objectContaining({ type: "session_created" }),
+        expect.objectContaining({ type: "patient_joined_waiting_room" }),
+      ],
+    });
+    expect(body).not.toHaveProperty("role");
+    expect(body).not.toHaveProperty("status");
+  });
+
+  it("returns 404 unknown_key for a patient key", async () => {
+    const created = (await (
+      await fetch(`${baseUrl}/api/sessions`, { method: "POST" })
+    ).json()) as CreateSessionResponse;
+
+    const response = await fetch(`${baseUrl}/api/sessions/${created.patientKey}/events`);
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      code: "unknown_key",
+      message: "no session has that key",
+    });
+  });
+
+  it("returns 404 unknown_key for a key no session has", async () => {
+    const response = await fetch(`${baseUrl}/api/sessions/no-such-key/events`);
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      code: "unknown_key",
+      message: "no session has that key",
+    });
+  });
+
+  it("returns 200 with an empty events array for a provider key with no logged events", async () => {
+    repository.upsertSession({
+      id: "empty-log-session",
+      providerKey: "empty-log-provider-key",
+      patientKey: "empty-log-patient-key",
+      status: "CREATED",
+      createdAt: new Date().toISOString(),
+      endedAt: null,
+      endedReason: null,
+    });
+
+    const response = await fetch(`${baseUrl}/api/sessions/empty-log-provider-key/events`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ events: [] });
   });
 });
