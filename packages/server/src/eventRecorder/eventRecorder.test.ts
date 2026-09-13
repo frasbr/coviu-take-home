@@ -19,7 +19,7 @@ beforeEach(() => {
   attachEventRecorder(registry, repository);
 
   // Mirrors what Services.createSession does: write the first row directly,
-  // since only that path holds the keys (architecture.md §6.2).
+  // since only that path holds the keys.
   repository.upsertSession({
     id: "session-1",
     providerKey: "provider-key-1",

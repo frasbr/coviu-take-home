@@ -6,7 +6,7 @@ import { RoleSchema, SessionStatusSchema } from "./status.js";
 export const CreateSessionRequestSchema = z.object({});
 export type CreateSessionRequest = z.infer<typeof CreateSessionRequestSchema>;
 
-/** `POST /api/sessions` response (architecture.md §4.2). */
+/** `POST /api/sessions` response. */
 export const CreateSessionResponseSchema = z.object({
   providerKey: z.string(),
   patientKey: z.string(),

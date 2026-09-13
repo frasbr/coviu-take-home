@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Error codes shared by the HTTP and Socket.IO transports (architecture.md §4.5). */
+/** Error codes shared by the HTTP and Socket.IO transports. */
 export const ErrorCodeSchema = z.enum([
   "unknown_key",
   "session_ended",

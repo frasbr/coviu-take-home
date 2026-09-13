@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { EndedReasonSchema, RoleSchema } from "./status.js";
 
-/** `events.type` values (architecture.md §5.2). */
+/** `events.type` values. */
 export const EventTypeSchema = z.enum([
   "session_created",
   "patient_joined_waiting_room",
@@ -38,7 +38,7 @@ export const EventDataSchema = z.union([
 ]);
 export type EventData = z.infer<typeof EventDataSchema>;
 
-/** One row of the event log (architecture.md §5.2, §4.2). */
+/** One row of the event log. */
 export const EventSchema = z.object({
   id: z.number().int(),
   type: EventTypeSchema,

@@ -26,7 +26,7 @@ type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 const GENERIC_ERROR: ErrorPayload = { code: "unknown_key", message: "could not join the session" };
 
 /**
- * The session and socket layer from architecture.md §6.3. It wraps the HTTP calls
+ * The session and socket layer. It wraps the HTTP calls
  * and the one Socket.IO connection, and turns socket events into React state. It
  * holds no reconnect or backoff code - socket.io-client does that - and a handshake
  * refusal (connect_error) is terminal rather than retried.

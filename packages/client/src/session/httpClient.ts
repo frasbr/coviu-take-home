@@ -7,7 +7,7 @@ import {
   GetSessionResponseSchema,
 } from "@coviu/shared";
 
-/** Thrown for a non-OK HTTP response, carrying the server's error body (architecture.md §4.5). */
+/** Thrown for a non-OK HTTP response, carrying the server's error body. */
 export class HttpError extends Error {
   readonly payload: ErrorPayload;
 
@@ -30,7 +30,7 @@ async function parseErrorBody(res: Response): Promise<ErrorPayload> {
     : { code: "unknown_key", message: `request failed with status ${res.status}` };
 }
 
-/** Wraps the HTTP endpoints from architecture.md §4.2. Knows nothing about React or sockets. */
+/** Wraps the HTTP endpoints. Knows nothing about React or sockets. */
 export function createHttpClient(baseUrl: string): HttpClient {
   return {
     async createSession(): Promise<CreateSessionResponse> {

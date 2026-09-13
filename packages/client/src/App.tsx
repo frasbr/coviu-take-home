@@ -8,8 +8,8 @@ export interface AppProps {
 }
 
 /**
- * The provider and patient links (architecture.md §4.1) are `/p/:key` and `/w/:key`.
- * There is no routing dependency in scope (§2.1), so this is a plain path match.
+ * The provider and patient links are `/p/:key` and `/w/:key`.
+ * There is no routing dependency in scope, so this is a plain path match.
  */
 function parsePath(pathname: string): { view: "provider" | "patient"; key: string } | undefined {
   const providerMatch = pathname.match(/^\/p\/(.+)$/);

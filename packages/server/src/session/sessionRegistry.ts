@@ -82,7 +82,7 @@ export class SessionRegistry extends EventEmitter {
     });
   }
 
-  /** Sets presence.provider (architecture.md §4.3). Idempotent, and no state transition. */
+  /** Sets presence.provider. Idempotent, and no state transition. */
   providerConnected(sessionId: string): void {
     const entry = this.requireEntry(sessionId);
     if (entry.presence.provider) {
@@ -93,7 +93,7 @@ export class SessionRegistry extends EventEmitter {
     this.emit("presence", { sessionId, presence: { ...entry.presence } });
   }
 
-  /** WAITING -> ACTIVE, on the provider's `admit` (architecture.md §3). */
+  /** WAITING -> ACTIVE, on the provider's `admit`. */
   admit(sessionId: string): void {
     const entry = this.requireEntry(sessionId);
     if (entry.status !== "WAITING") {
@@ -112,7 +112,7 @@ export class SessionRegistry extends EventEmitter {
     });
   }
 
-  /** Any state but ENDED -> ENDED, on the provider's `end-session` (architecture.md §3). */
+  /** Any state but ENDED -> ENDED, on the provider's `end-session`. */
   endSession(sessionId: string): void {
     const entry = this.requireEntry(sessionId);
     if (entry.status === "ENDED") {
@@ -133,7 +133,7 @@ export class SessionRegistry extends EventEmitter {
     });
   }
 
-  /** Sets presence.patient false on `patient:leave` (architecture.md §4.3). The session does not end. */
+  /** Sets presence.patient false on `patient:leave`. The session does not end. */
   patientLeft(sessionId: string): void {
     const entry = this.requireEntry(sessionId);
     if (entry.status === "CREATED" || entry.status === "ENDED") {
