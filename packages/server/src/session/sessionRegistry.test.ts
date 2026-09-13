@@ -265,3 +265,133 @@ describe("patientLeft", () => {
     expect(() => registry.patientLeft("no-such-session")).toThrow();
   });
 });
+
+describe("patientDisconnected", () => {
+  it("sets presence.patient false without changing the session status", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+
+    registry.patientDisconnected("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "ACTIVE",
+      presence: { provider: false, patient: false },
+    });
+  });
+
+  it("emits a transition event with eventType patient_disconnected and from equal to to", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.patientDisconnected("session-1");
+
+    expect(listener).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      from: "WAITING",
+      to: "WAITING",
+      eventType: "patient_disconnected",
+      presence: { provider: false, patient: false },
+    });
+  });
+
+  it("is idempotent and emits nothing when the patient is already absent", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.patientLeft("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.patientDisconnected("session-1");
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("throws when the session has ENDED", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.endSession("session-1");
+
+    expect(() => registry.patientDisconnected("session-1")).toThrow();
+  });
+
+  it("throws for a session id that is not registered", () => {
+    const registry = new SessionRegistry();
+    expect(() => registry.patientDisconnected("no-such-session")).toThrow();
+  });
+});
+
+describe("patientReconnected", () => {
+  it("sets presence.patient true without changing the session status", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    registry.patientLeft("session-1");
+
+    registry.patientReconnected("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "ACTIVE",
+      presence: { provider: false, patient: true },
+    });
+  });
+
+  it("emits a transition event with eventType patient_reconnected and from equal to to", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.patientLeft("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.patientReconnected("session-1");
+
+    expect(listener).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      from: "WAITING",
+      to: "WAITING",
+      eventType: "patient_reconnected",
+      presence: { provider: false, patient: true },
+    });
+  });
+
+  it("is idempotent and emits nothing when the patient is already present", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.patientReconnected("session-1");
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("throws when the session is still CREATED", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+
+    expect(() => registry.patientReconnected("session-1")).toThrow();
+  });
+
+  it("throws when the session has ENDED", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.endSession("session-1");
+
+    expect(() => registry.patientReconnected("session-1")).toThrow();
+  });
+
+  it("throws for a session id that is not registered", () => {
+    const registry = new SessionRegistry();
+    expect(() => registry.patientReconnected("no-such-session")).toThrow();
+  });
+});

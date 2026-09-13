@@ -151,6 +151,42 @@ export class SessionRegistry extends EventEmitter {
     });
   }
 
+  /** Sets presence.patient false on a patient socket drop. Never a state transition. */
+  patientDisconnected(sessionId: string): void {
+    this.setPatientPresence(sessionId, false, "patient_disconnected");
+  }
+
+  /** Sets presence.patient true when a patient socket returns. Never a state transition. */
+  patientReconnected(sessionId: string): void {
+    this.setPatientPresence(sessionId, true, "patient_reconnected");
+  }
+
+  // Presence changes ride on `transition` with `from` equal to `to`, as patientLeft
+  // does, because only `transition` reaches the event recorder and section 3 wants a
+  // row for each of these. Section 4.3: a patient rejoining changes presence only, so
+  // no status moves here and the grace timer stays a provider concern.
+  private setPatientPresence(sessionId: string, present: boolean, eventType: EventType): void {
+    const entry = this.requireEntry(sessionId);
+    if (entry.status === "CREATED" || entry.status === "ENDED") {
+      throw new Error(
+        `patient presence cannot change for session ${sessionId} in state ${entry.status}`,
+      );
+    }
+    if (entry.presence.patient === present) {
+      return;
+    }
+
+    entry.presence.patient = present;
+
+    this.emit("transition", {
+      sessionId,
+      from: entry.status,
+      to: entry.status,
+      eventType,
+      presence: { ...entry.presence },
+    });
+  }
+
   private requireEntry(sessionId: string): SessionRegistryEntry {
     const entry = this.sessions.get(sessionId);
     if (!entry) {

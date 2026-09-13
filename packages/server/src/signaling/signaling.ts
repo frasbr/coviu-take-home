@@ -139,8 +139,15 @@ export function attachSignaling(
 
     socket.join(roomName(sessionId));
 
-    if (role === "patient" && registry.getSession(sessionId)?.status === "CREATED") {
-      registry.patientConnected(sessionId);
+    if (role === "patient") {
+      // The first patient socket is the WAITING transition; every later one is a
+      // reconnect, which section 4.3 says changes presence only.
+      const status = registry.getSession(sessionId)?.status;
+      if (status === "CREATED") {
+        registry.patientConnected(sessionId);
+      } else if (status && status !== "ENDED") {
+        registry.patientReconnected(sessionId);
+      }
     }
     if (role === "provider") {
       registry.providerConnected(sessionId);
@@ -199,8 +206,18 @@ export function attachSignaling(
 
     socket.on("disconnect", () => {
       const current = connectedSockets.get(sessionId);
-      if (current?.[role] === socket.id) {
-        delete current[role];
+      // A superseded socket's late disconnect must not clear the presence its
+      // replacement just set.
+      if (current?.[role] !== socket.id) {
+        return;
+      }
+      delete current[role];
+
+      if (role === "patient") {
+        const status = registry.getSession(sessionId)?.status;
+        if (status && status !== "CREATED" && status !== "ENDED") {
+          registry.patientDisconnected(sessionId);
+        }
       }
     });
   });

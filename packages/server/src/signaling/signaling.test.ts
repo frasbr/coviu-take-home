@@ -392,3 +392,84 @@ describe("peer:id", () => {
     expect(after.n).toEqual(before.n);
   });
 });
+
+describe("patient presence across a socket drop", () => {
+  it("clears presence.patient when the patient socket disconnects", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const providerUpdate = waitForEvent<SessionStatePayload>(provider, "session:state");
+    patient.close();
+
+    await expect(providerUpdate).resolves.toMatchObject({
+      state: "WAITING",
+      presence: { provider: true, patient: false },
+    });
+  });
+
+  it("restores presence.patient when the patient connects again", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const gone = waitForEvent<SessionStatePayload>(provider, "session:state");
+    patient.close();
+    await gone;
+
+    const back = waitForEvent<SessionStatePayload>(provider, "session:state");
+    connect(created.patientKey);
+
+    await expect(back).resolves.toMatchObject({
+      state: "WAITING",
+      presence: { provider: true, patient: true },
+    });
+  });
+
+  it("restores presence.patient after an explicit leave, with the session still ACTIVE", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    const admitted = waitForEvent<SessionStatePayload>(provider, "session:state");
+    provider.emit("admit", {});
+    await admitted;
+
+    const left = waitForEvent<SessionStatePayload>(provider, "session:state");
+    patient.emit("patient:leave", {});
+    await left;
+    patient.close();
+
+    const back = waitForEvent<SessionStatePayload>(provider, "session:state");
+    connect(created.patientKey);
+
+    await expect(back).resolves.toMatchObject({
+      state: "ACTIVE",
+      presence: { provider: true, patient: true },
+    });
+  });
+
+  it("does not clear presence.patient when the provider socket drops", async () => {
+    const created = services.createSession();
+    const provider = connect(created.providerKey);
+    await waitForEvent(provider, "session:state");
+    const patient = connect(created.patientKey);
+    await waitForEvent(patient, "session:state");
+
+    provider.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const resolved = services.resolveKey(created.providerKey);
+    expect(resolved).toBeDefined();
+    expect(registry.getSession(resolved?.sessionId ?? "")).toMatchObject({
+      status: "WAITING",
+      presence: { patient: true },
+    });
+  });
+});

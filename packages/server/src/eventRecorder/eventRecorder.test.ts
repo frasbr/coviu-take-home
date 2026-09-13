@@ -57,6 +57,26 @@ describe("attachEventRecorder", () => {
     });
   });
 
+  it("records a patient drop and return as rows, leaving the session status alone", () => {
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+
+    registry.patientDisconnected("session-1");
+    registry.patientReconnected("session-1");
+
+    const events = repository.getEvents("session-1");
+    expect(events.map((event) => event.type)).toEqual([
+      "session_created",
+      "patient_joined_waiting_room",
+      "patient_admitted",
+      "patient_disconnected",
+      "patient_reconnected",
+    ]);
+
+    const session = repository.getSession("session-1");
+    expect(session).toMatchObject({ status: "ACTIVE", endedAt: null, endedReason: null });
+  });
+
   it("records the reason and sets endedAt and endedReason on a session_ended transition", () => {
     registry.endSession("session-1");
 
