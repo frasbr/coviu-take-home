@@ -56,3 +56,25 @@ npm run build
 
 Builds each workspace package (`shared`, `server`, `client`) that defines a
 `build` script.
+
+## Deliberately left out
+
+**Recovering a call after the server goes away.** The socket and the peer
+connection fail independently by design, so a Socket.IO reconnect does not tear
+down a live call: kill the server mid-consultation and both cameras stay on and
+the media keeps flowing, because the media path is peer to peer and does not
+touch the server once the call is up.
+
+What is missing is the other half. When the server comes back, nothing
+re-establishes the call — the signalling state is rebuilt, but neither side
+re-publishes its peer ID, so a call that was actually interrupted cannot be
+restored. The same gap shows up without a restart: a provider reload mid-call
+never learns the patient's peer ID again, because the patient never re-enters
+ACTIVE and so never re-sends it.
+
+Holding the cameras open through a fault the session cannot recover from is
+therefore only half a feature. Closing it needs a reconnect design — whether
+clients re-publish their peer ID on a presence transition, or the server latches
+the last peer ID per role and replays it on join, which the current signalling
+contract forbids — and that sits with the grace-period work that is also not
+built.
