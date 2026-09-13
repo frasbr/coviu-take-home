@@ -1,0 +1,66 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { VideoPanel } from "./VideoPanel.js";
+
+function createStream() {
+  return { getTracks: () => [] } as unknown as MediaStream;
+}
+
+function video(label: string) {
+  return screen.getByLabelText(label) as HTMLVideoElement;
+}
+
+afterEach(cleanup);
+
+describe("VideoPanel", () => {
+  it("mutes the local video and leaves the remote video unmuted", () => {
+    render(<VideoPanel localStream={null} remoteStream={null} error={null} />);
+
+    expect(video("Local video").muted).toBe(true);
+    expect(video("Remote video").muted).toBe(false);
+  });
+
+  it("assigns each stream to the matching element's srcObject", () => {
+    const localStream = createStream();
+    const remoteStream = createStream();
+
+    render(<VideoPanel localStream={localStream} remoteStream={remoteStream} error={null} />);
+
+    expect(video("Local video").srcObject).toBe(localStream);
+    expect(video("Remote video").srcObject).toBe(remoteStream);
+  });
+
+  it("clears srcObject when a stream prop goes back to null", () => {
+    const remoteStream = createStream();
+    const { rerender } = render(
+      <VideoPanel localStream={null} remoteStream={remoteStream} error={null} />,
+    );
+    expect(video("Remote video").srcObject).toBe(remoteStream);
+
+    rerender(<VideoPanel localStream={null} remoteStream={null} error={null} />);
+
+    expect(video("Remote video").srcObject).toBeNull();
+  });
+
+  it("renders a non-null error as an alert", () => {
+    render(
+      <VideoPanel
+        localStream={null}
+        remoteStream={null}
+        error="Could not access the camera or microphone."
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not access the camera or microphone.",
+    );
+  });
+
+  it("renders no alert when the error is null", () => {
+    render(<VideoPanel localStream={null} remoteStream={null} error={null} />);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});

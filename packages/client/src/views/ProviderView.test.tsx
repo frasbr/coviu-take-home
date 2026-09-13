@@ -1,29 +1,63 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
+import type { SessionStatePayload } from "@coviu/shared";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { UseMediaResult } from "../media/useMedia.js";
+import { useMedia } from "../media/useMedia.js";
 import type { SessionConnection } from "../session/useSession.js";
 import { useSession } from "../session/useSession.js";
 import { ProviderView } from "./ProviderView.js";
 
 vi.mock("../session/useSession.js", () => ({ useSession: vi.fn() }));
+vi.mock("../media/useMedia.js", () => ({ useMedia: vi.fn() }));
+vi.mock("../media/peerFactory.js", () => ({ createBrowserPeer: vi.fn() }));
 
 const admit = vi.fn();
 const endSession = vi.fn();
 const leave = vi.fn();
 const sendPeerId = vi.fn();
+const callPeer = vi.fn();
 
-function mockConnection(connection: SessionConnection) {
+function mockConnection(connection: SessionConnection, remotePeerId: string | null = null) {
   vi.mocked(useSession).mockReturnValue({
     connection,
-    remotePeerId: null,
+    remotePeerId,
     admit,
     endSession,
     leave,
     sendPeerId,
   });
 }
+
+function mockMedia(overrides: Partial<UseMediaResult> = {}) {
+  vi.mocked(useMedia).mockReturnValue({
+    localStream: null,
+    remoteStream: null,
+    localPeerId: null,
+    error: null,
+    callPeer,
+    ...overrides,
+  });
+}
+
+function providerIn(state: SessionStatePayload["state"]): SessionConnection {
+  return {
+    status: "connected",
+    role: "provider",
+    state: {
+      state,
+      since: "2026-01-01T00:00:00.000Z",
+      reason: null,
+      presence: { provider: true, patient: true },
+    },
+  };
+}
+
+beforeEach(() => {
+  mockMedia();
+});
 
 afterEach(() => {
   cleanup();
@@ -104,5 +138,64 @@ describe("ProviderView", () => {
     render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
 
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("activates media only once the session is ACTIVE", () => {
+    mockConnection(providerIn("ACTIVE"));
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(useMedia).toHaveBeenCalledWith(expect.objectContaining({ active: true }));
+  });
+
+  it("leaves media inactive while WAITING", () => {
+    mockConnection(providerIn("WAITING"));
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(useMedia).toHaveBeenCalledWith(expect.objectContaining({ active: false }));
+  });
+
+  it("sends its own peer id once the local peer is open", () => {
+    mockConnection(providerIn("ACTIVE"));
+    mockMedia({ localPeerId: "local-peer" });
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(sendPeerId).toHaveBeenCalledWith("local-peer");
+  });
+
+  it("calls the remote peer once both peer ids are known", () => {
+    mockConnection(providerIn("ACTIVE"), "remote-peer");
+    mockMedia({ localPeerId: "local-peer" });
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(callPeer).toHaveBeenCalledWith("remote-peer");
+  });
+
+  it("does not call the remote peer before its own peer is open", () => {
+    mockConnection(providerIn("ACTIVE"), "remote-peer");
+    mockMedia({ localPeerId: null });
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(callPeer).not.toHaveBeenCalled();
+  });
+
+  it("shows a media error without disabling the session controls", async () => {
+    mockConnection(providerIn("ACTIVE"));
+    mockMedia({ error: "Could not access the camera or microphone." });
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not access the camera or microphone.",
+    );
+    expect(screen.getByText("State: ACTIVE")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "End session" }));
+
+    expect(endSession).toHaveBeenCalled();
   });
 });
