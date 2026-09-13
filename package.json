@@ -3,9 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": [
-    "packages/*"
-  ],
+  "workspaces": ["packages/*"],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev": "npm run dev:server & npm run dev:client",
