@@ -118,6 +118,68 @@ describe("providerConnected", () => {
     const registry = new SessionRegistry();
     expect(() => registry.providerConnected("no-such-session")).toThrow();
   });
+
+  it("restores an ACTIVE session after a reconnect from DISCONNECTED_GRACE", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    registry.providerConnected("session-1");
+    registry.providerDisconnected("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.providerConnected("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "ACTIVE",
+      presence: { provider: true, patient: true },
+    });
+    expect(listener).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      from: "DISCONNECTED_GRACE",
+      to: "ACTIVE",
+      eventType: "provider_reconnected",
+      presence: { provider: true, patient: true },
+    });
+  });
+
+  it("restores a WAITING session after a reconnect from DISCONNECTED_GRACE", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.providerConnected("session-1");
+    registry.providerDisconnected("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.providerConnected("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "WAITING",
+      presence: { provider: true, patient: true },
+    });
+    expect(listener).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      from: "DISCONNECTED_GRACE",
+      to: "WAITING",
+      eventType: "provider_reconnected",
+      presence: { provider: true, patient: true },
+    });
+  });
+
+  it("cancels the grace timer on reconnect, so the session never times out", async () => {
+    const registry = new SessionRegistry({ gracePeriodMs: 5 });
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    registry.providerDisconnected("session-1");
+
+    registry.providerConnected("session-1");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(registry.getSession("session-1")).toMatchObject({ status: "ACTIVE" });
+  });
 });
 
 describe("admit", () => {

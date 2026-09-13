@@ -95,9 +95,36 @@ export class SessionRegistry extends EventEmitter {
     });
   }
 
-  /** Sets presence.provider. Idempotent, and no state transition. */
+  /**
+   * Sets presence.provider. Idempotent, and no state transition, unless the session is in
+   * DISCONNECTED_GRACE, in which case this is the reconnect: the grace timer is cancelled and
+   * the status is restored to whatever providerDisconnected remembered.
+   */
   providerConnected(sessionId: string): void {
     const entry = this.requireEntry(sessionId);
+    if (entry.status === "DISCONNECTED_GRACE") {
+      const timer = this.graceTimers.get(sessionId);
+      if (timer) {
+        clearTimeout(timer);
+        this.graceTimers.delete(sessionId);
+      }
+
+      const from = entry.status;
+      const restoredStatus = entry.preDisconnectStatus ?? "WAITING";
+      entry.status = restoredStatus;
+      entry.preDisconnectStatus = undefined;
+      entry.presence.provider = true;
+
+      this.emit("transition", {
+        sessionId,
+        from,
+        to: entry.status,
+        eventType: "provider_reconnected",
+        presence: { ...entry.presence },
+      });
+      return;
+    }
+
     if (entry.presence.provider) {
       return;
     }
