@@ -430,7 +430,7 @@ describe("patient presence across a socket drop", () => {
     });
   });
 
-  it("restores presence.patient after an explicit leave, with the session still ACTIVE", async () => {
+  it("returns to WAITING after an explicit leave, and a rejoin needs re-admitting", async () => {
     const created = services.createSession();
     const provider = connect(created.providerKey);
     await waitForEvent(provider, "session:state");
@@ -443,14 +443,19 @@ describe("patient presence across a socket drop", () => {
 
     const left = waitForEvent<SessionStatePayload>(provider, "session:state");
     patient.emit("patient:leave", {});
-    await left;
+    const leftState = await left;
     patient.close();
+
+    expect(leftState).toMatchObject({
+      state: "WAITING",
+      presence: { provider: true, patient: false },
+    });
 
     const back = waitForEvent<SessionStatePayload>(provider, "session:state");
     connect(created.patientKey);
 
     await expect(back).resolves.toMatchObject({
-      state: "ACTIVE",
+      state: "WAITING",
       presence: { provider: true, patient: true },
     });
   });

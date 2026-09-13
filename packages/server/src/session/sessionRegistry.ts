@@ -133,18 +133,27 @@ export class SessionRegistry extends EventEmitter {
     });
   }
 
-  /** Sets presence.patient false on `patient:leave`. The session does not end. */
+  /**
+   * Sets presence.patient false on `patient:leave`. A deliberate leave from
+   * ACTIVE also drops the session back to WAITING, so a later rejoin needs
+   * the provider to re-admit rather than resuming the call outright. The
+   * session never ends here.
+   */
   patientLeft(sessionId: string): void {
     const entry = this.requireEntry(sessionId);
     if (entry.status === "CREATED" || entry.status === "ENDED") {
       throw new Error(`patient cannot leave session ${sessionId} in state ${entry.status}`);
     }
 
+    const from = entry.status;
     entry.presence.patient = false;
+    if (entry.status === "ACTIVE") {
+      entry.status = "WAITING";
+    }
 
     this.emit("transition", {
       sessionId,
-      from: entry.status,
+      from,
       to: entry.status,
       eventType: "patient_left",
       presence: { ...entry.presence },

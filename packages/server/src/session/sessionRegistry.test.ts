@@ -264,6 +264,39 @@ describe("patientLeft", () => {
     const registry = new SessionRegistry();
     expect(() => registry.patientLeft("no-such-session")).toThrow();
   });
+
+  it("moves an ACTIVE session back to WAITING, so a rejoin needs re-admitting", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+
+    registry.patientLeft("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "WAITING",
+      presence: { provider: false, patient: false },
+    });
+  });
+
+  it("emits a transition event from ACTIVE to WAITING", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.patientLeft("session-1");
+
+    expect(listener).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      from: "ACTIVE",
+      to: "WAITING",
+      eventType: "patient_left",
+      presence: { provider: false, patient: false },
+    });
+  });
 });
 
 describe("patientDisconnected", () => {
@@ -333,12 +366,27 @@ describe("patientReconnected", () => {
     registry.createSession("session-1");
     registry.patientConnected("session-1");
     registry.admit("session-1");
-    registry.patientLeft("session-1");
+    registry.patientDisconnected("session-1");
 
     registry.patientReconnected("session-1");
 
     expect(registry.getSession("session-1")).toEqual({
       status: "ACTIVE",
+      presence: { provider: false, patient: true },
+    });
+  });
+
+  it("stays in WAITING after a reconnect that follows a deliberate leave from ACTIVE", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    registry.patientLeft("session-1");
+
+    registry.patientReconnected("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "WAITING",
       presence: { provider: false, patient: true },
     });
   });

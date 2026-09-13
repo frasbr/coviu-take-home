@@ -76,6 +76,7 @@ use the name.
 ```
 CREATED             --(patient opens link, connects)-----> WAITING
 WAITING             --(provider admits)------------------> ACTIVE
+ACTIVE              --(patient sends patient:leave)------> WAITING
 WAITING or ACTIVE   --(provider socket drops)------------> DISCONNECTED_GRACE (timer starts)
 DISCONNECTED_GRACE  --(provider reconnects in time)------> the state before the closure
 DISCONNECTED_GRACE  --(grace period elapses)-------------> ENDED (reason: timeout)
@@ -100,6 +101,15 @@ These rules follow from the state machine.
   server sets `presence.patient` to false, sends `session:state` (§4.3), and writes a
   `patient_disconnected` event. The provider is still connected and decides what to do: wait, or
   send `end-session`. A lost patient connection must not make that decision for the provider.
+- **A deliberate patient leave (`patient:leave`) is a different fact from a disconnect, and it
+  does change the state when the session is `ACTIVE`.** A disconnect may reverse itself and the
+  provider is left to decide; a leave is the patient's own decision to end their part of the call.
+  The server sets `presence.patient` to false, moves `ACTIVE` back to `WAITING`, and writes a
+  `patient_left` event. A patient who leaves from `WAITING` (before the provider has admitted
+  them) stays in `WAITING`; there is nowhere further back to go. Either way, a later rejoin follows
+  the ordinary `WAITING` path: the provider must `admit` again before the call resumes. The state
+  therefore reflects reality on its own, and no view needs to hide or reinterpret a stale `ACTIVE`
+  reading to compensate.
 - The patient reconnects at any time before the session reaches `ENDED`. There is no separate
   deadline on a patient reconnect.
 - **Do not destroy the PeerJS peer when the Socket.IO connection drops.** The two connections
@@ -214,7 +224,7 @@ argument to `emit`.
 | `session:state` | server to both | `{ state, since, reason, presence }` | The correct state. The server sends it on each transition (§3) and on each change of `presence`. `presence` is `{ provider: boolean, patient: boolean }`. `reason` has a value only in state `ENDED`, and it holds the same value as `sessions.ended_reason` (§5.1). |
 | `peer:id` | peer to peer | `{ peerId }` | The PeerJS ID of the sender (§4.4). The server relays it and does not store it. |
 | `chat:message` | peer to peer | `{ text, sentAt }` | Text chat. The server relays it and writes it to the event log (§5.2). |
-| `patient:leave` | patient to server | `{}` | The patient leaves the consultation. The server sets `presence.patient` to false and writes a `patient_left` event. The session does not end. |
+| `patient:leave` | patient to server | `{}` | The patient leaves the consultation. The server sets `presence.patient` to false, moves the session from `ACTIVE` back to `WAITING` (§3), and writes a `patient_left` event. The session does not end. |
 | `chat:history` | server to one client | `{ messages }` | Chat that the client missed. The server sends it once, on connection. Each item is `{ sender, text, sentAt }`. |
 | `end-session` | provider to server | `{}` | The provider ends the consultation. |
 | `error` | server to one client | `{ code, message }` | A protocol error. |
