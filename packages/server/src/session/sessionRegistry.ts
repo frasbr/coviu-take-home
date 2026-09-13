@@ -264,6 +264,8 @@ export class SessionRegistry extends EventEmitter {
     entry.presence.patient = false;
     if (entry.status === "ACTIVE") {
       entry.status = "WAITING";
+    } else if (entry.status === "DISCONNECTED_GRACE" && entry.preDisconnectStatus === "ACTIVE") {
+      entry.preDisconnectStatus = "WAITING";
     }
 
     this.emit("transition", {

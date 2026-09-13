@@ -359,6 +359,65 @@ describe("patientLeft", () => {
       presence: { provider: false, patient: false },
     });
   });
+
+  it("demotes the remembered state to WAITING when the patient leaves during grace", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    registry.providerConnected("session-1");
+    registry.providerDisconnected("session-1");
+
+    registry.patientLeft("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "DISCONNECTED_GRACE",
+      presence: { provider: false, patient: false },
+    });
+
+    registry.providerConnected("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "WAITING",
+      presence: { provider: true, patient: false },
+    });
+  });
+
+  it("still emits a same-state patient_left transition while DISCONNECTED_GRACE", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    registry.providerDisconnected("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.patientLeft("session-1");
+
+    expect(listener).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      from: "DISCONNECTED_GRACE",
+      to: "DISCONNECTED_GRACE",
+      eventType: "patient_left",
+      presence: { provider: false, patient: false },
+    });
+  });
+
+  it("leaves the remembered state as WAITING when it was already WAITING", () => {
+    const registry = new SessionRegistry();
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.providerConnected("session-1");
+    registry.providerDisconnected("session-1");
+
+    registry.patientLeft("session-1");
+    registry.providerConnected("session-1");
+
+    expect(registry.getSession("session-1")).toEqual({
+      status: "WAITING",
+      presence: { provider: true, patient: false },
+    });
+  });
 });
 
 describe("providerDisconnected", () => {
