@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { MediaCall, MediaPeer } from "./useMedia.js";
+import type { CreatePeer, GetUserMedia, MediaCall, MediaPeer } from "./useMedia.js";
 import { useMedia } from "./useMedia.js";
 
 type Handler = (payload?: never) => void;
@@ -62,6 +62,10 @@ function fire(handlers: Map<string, Handler>, event: string, payload?: unknown) 
   });
 }
 
+function firstCallOrder(mock: { mock: { invocationCallOrder: number[] } }): number {
+  return mock.mock.invocationCallOrder[0];
+}
+
 async function renderActive() {
   const { stream, tracks } = createStream();
   const peerFake = createPeerFake();
@@ -113,6 +117,38 @@ describe("useMedia", () => {
     expect(result.current.localStream).toBe(stream);
   });
 
+  it("keeps the camera and peer when the caller passes fresh function identities", async () => {
+    const { stream, tracks } = createStream();
+    const peerFake = createPeerFake();
+    const getUserMedia = vi.fn(() => Promise.resolve(stream));
+    const createPeer = vi.fn(() => peerFake.peer);
+    const { result, rerender } = renderHook(
+      ({ gum, peer }: { gum: GetUserMedia; peer: CreatePeer }) =>
+        useMedia({ active: true, createPeer: peer, getUserMedia: gum }),
+      { initialProps: { gum: getUserMedia, peer: createPeer } },
+    );
+
+    await waitFor(() => expect(result.current.localStream).toBe(stream));
+
+    const freshGetUserMedia = vi.fn(() => Promise.resolve(createStream().stream));
+    const freshCreatePeer = vi.fn(() => createPeerFake().peer);
+    rerender({ gum: freshGetUserMedia, peer: freshCreatePeer });
+    rerender({
+      gum: vi.fn(() => Promise.resolve(createStream().stream)),
+      peer: vi.fn(() => createPeerFake().peer),
+    });
+
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(createPeer).toHaveBeenCalledTimes(1);
+    expect(freshGetUserMedia).not.toHaveBeenCalled();
+    expect(freshCreatePeer).not.toHaveBeenCalled();
+    expect(peerFake.destroy).not.toHaveBeenCalled();
+    for (const track of tracks) {
+      expect(track.stop).not.toHaveBeenCalled();
+    }
+    expect(result.current.localStream).toBe(stream);
+  });
+
   it("surfaces the peer id from the peer's open event", async () => {
     const { result, peerFake } = await renderActive();
 
@@ -153,7 +189,7 @@ describe("useMedia", () => {
     expect(peerFake.call).toHaveBeenCalledWith("remote-1", expect.anything());
   });
 
-  it("does not call a peer before the local stream exists", async () => {
+  it("does not call a peer until the local stream exists, then does", async () => {
     const gum = deferred<MediaStream>();
     const getUserMedia = vi.fn(() => gum.promise);
     const peerFake = createPeerFake();
@@ -171,6 +207,23 @@ describe("useMedia", () => {
     await act(async () => {
       gum.resolve(stream);
     });
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+
+    expect(peerFake.call).toHaveBeenCalledTimes(1);
+    expect(peerFake.call).toHaveBeenCalledWith("remote-1", stream);
+  });
+
+  it("does not call a peer once it has gone inactive", async () => {
+    const { result, rerender, peerFake } = await renderActive();
+
+    rerender({ active: false });
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+
+    expect(peerFake.call).not.toHaveBeenCalled();
   });
 
   it("answers an inbound call with the local stream and surfaces the remote stream", async () => {
@@ -188,6 +241,40 @@ describe("useMedia", () => {
     expect(result.current.remoteStream).toBe(remote);
   });
 
+  it("closes an inbound call that arrives once a call is already placed", async () => {
+    const { result, peerFake } = await renderActive();
+
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+    const outbound = peerFake.outbound[0];
+    const inbound = createCall();
+
+    fire(peerFake.handlers, "call", inbound.call);
+
+    expect(inbound.answer).not.toHaveBeenCalled();
+    expect(inbound.close).toHaveBeenCalledTimes(1);
+    expect(outbound.close).not.toHaveBeenCalled();
+
+    const remote = createStream().stream;
+    fire(outbound.handlers, "stream", remote);
+
+    expect(result.current.remoteStream).toBe(remote);
+  });
+
+  it("does not place an outbound call once an inbound one was answered", async () => {
+    const { result, peerFake } = await renderActive();
+    const inbound = createCall();
+
+    fire(peerFake.handlers, "call", inbound.call);
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+
+    expect(peerFake.call).not.toHaveBeenCalled();
+    expect(inbound.close).not.toHaveBeenCalled();
+  });
+
   it("reports a capture failure and never creates a peer", async () => {
     const getUserMedia = vi.fn(() => Promise.reject(new Error("NotAllowedError")));
     const createPeer = vi.fn(() => createPeerFake().peer);
@@ -201,18 +288,34 @@ describe("useMedia", () => {
     expect(result.current.localStream).toBeNull();
   });
 
+  it("reports a peer that fails to be created as a connection failure, not a capture one", async () => {
+    const { stream } = createStream();
+    const getUserMedia = vi.fn(() => Promise.resolve(stream));
+    const createPeer = vi.fn((): MediaPeer => {
+      throw new Error("no websocket");
+    });
+
+    const { result } = renderHook(() => useMedia({ active: true, createPeer, getUserMedia }));
+
+    await waitFor(() => expect(result.current.error).toBe("The video connection failed."));
+    expect(result.current.localStream).toBe(stream);
+  });
+
   it("reports a peer error without dropping the local stream", async () => {
-    const { result, peerFake, stream } = await renderActive();
+    const { result, peerFake, stream, tracks } = await renderActive();
 
     fire(peerFake.handlers, "error", new Error("network"));
 
     expect(result.current.error).toBe("The video connection failed.");
     expect(result.current.localStream).toBe(stream);
     expect(peerFake.destroy).not.toHaveBeenCalled();
+    for (const track of tracks) {
+      expect(track.stop).not.toHaveBeenCalled();
+    }
   });
 
   it("reports a call error without dropping the local stream", async () => {
-    const { result, peerFake, stream } = await renderActive();
+    const { result, peerFake, stream, tracks } = await renderActive();
 
     act(() => {
       result.current.callPeer("remote-1");
@@ -221,6 +324,9 @@ describe("useMedia", () => {
 
     expect(result.current.error).toBe("The video connection failed.");
     expect(result.current.localStream).toBe(stream);
+    for (const track of tracks) {
+      expect(track.stop).not.toHaveBeenCalled();
+    }
   });
 
   it("clears the remote stream and reports the end when a live call closes", async () => {
@@ -239,7 +345,7 @@ describe("useMedia", () => {
     expect(result.current.error).toBe("The video call ended.");
   });
 
-  it("stops every track, destroys the peer and clears state when it goes inactive", async () => {
+  it("closes the call, destroys the peer, then stops every track when it goes inactive", async () => {
     const { result, rerender, peerFake, tracks } = await renderActive();
 
     act(() => {
@@ -254,21 +360,57 @@ describe("useMedia", () => {
     for (const track of tracks) {
       expect(track.stop).toHaveBeenCalledTimes(1);
     }
+    expect(firstCallOrder(outbound.close)).toBeLessThan(firstCallOrder(peerFake.destroy));
+    expect(firstCallOrder(peerFake.destroy)).toBeLessThan(firstCallOrder(tracks[0].stop));
     expect(result.current.localStream).toBeNull();
     expect(result.current.remoteStream).toBeNull();
     expect(result.current.localPeerId).toBeNull();
     expect(result.current.error).toBeNull();
   });
 
-  it("tears down the same way on unmount", async () => {
-    const { unmount, peerFake, tracks } = await renderActive();
+  it("tears down in the same order on unmount", async () => {
+    const { result, unmount, peerFake, tracks } = await renderActive();
+
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+    const outbound = peerFake.outbound[0];
 
     unmount();
 
+    expect(outbound.close).toHaveBeenCalledTimes(1);
     expect(peerFake.destroy).toHaveBeenCalledTimes(1);
     for (const track of tracks) {
       expect(track.stop).toHaveBeenCalledTimes(1);
     }
+    expect(firstCallOrder(outbound.close)).toBeLessThan(firstCallOrder(peerFake.destroy));
+    expect(firstCallOrder(peerFake.destroy)).toBeLessThan(firstCallOrder(tracks[0].stop));
+  });
+
+  it("ignores call and peer events once teardown has begun", async () => {
+    const { result, rerender, peerFake } = await renderActive();
+
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+    const outbound = peerFake.outbound[0];
+    outbound.close.mockImplementation(() => {
+      outbound.handlers.get("close")?.(undefined as never);
+    });
+
+    rerender({ active: false });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.remoteStream).toBeNull();
+
+    fire(outbound.handlers, "close");
+    fire(outbound.handlers, "stream", createStream().stream);
+    fire(peerFake.handlers, "error", new Error("late"));
+    fire(peerFake.handlers, "open", "late-id");
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.remoteStream).toBeNull();
+    expect(result.current.localPeerId).toBeNull();
   });
 
   it("stops a stream that arrives after it went inactive, and creates no peer", async () => {

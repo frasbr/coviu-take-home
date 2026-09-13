@@ -57,17 +57,18 @@ export function useMedia({ active, createPeer, getUserMedia }: UseMediaOptions):
   const streamRef = useRef<MediaStream | null>(null);
   const peerRef = useRef<MediaPeer | null>(null);
   const callRef = useRef<MediaCall | null>(null);
-  const calledPeerIdRef = useRef<string | null>(null);
+  const callPlacedRef = useRef(false);
+  const trackCallRef = useRef<((call: MediaCall) => void) | null>(null);
 
-  const trackCall = useCallback((call: MediaCall) => {
-    callRef.current = call;
-    call.on("stream", (stream) => setRemoteStream(stream));
-    call.on("close", () => {
-      setRemoteStream(null);
-      setError(CALL_ENDED_ERROR);
-    });
-    call.on("error", () => setError(CONNECTION_ERROR));
-  }, []);
+  // The injected dependencies live in refs so that `active` is the only thing
+  // that can restart capture. Keeping them in the dependency array would make the
+  // camera's lifetime hang on the caller passing stable function identities: one
+  // inline arrow in a view and every render would destroy the peer, drop the call
+  // and re-prompt for permission.
+  const createPeerRef = useRef(createPeer);
+  const getUserMediaRef = useRef(getUserMedia);
+  createPeerRef.current = createPeer;
+  getUserMediaRef.current = getUserMedia;
 
   useEffect(() => {
     if (!active) {
@@ -76,65 +77,110 @@ export function useMedia({ active, createPeer, getUserMedia }: UseMediaOptions):
 
     let cancelled = false;
 
-    getUserMedia()
-      .then((stream) => {
-        if (cancelled) {
-          stopTracks(stream);
-          return;
+    const trackCall = (call: MediaCall) => {
+      callRef.current = call;
+      call.on("stream", (stream) => {
+        if (!cancelled) {
+          setRemoteStream(stream);
         }
+      });
+      call.on("close", () => {
+        if (!cancelled) {
+          setRemoteStream(null);
+          setError(CALL_ENDED_ERROR);
+        }
+      });
+      call.on("error", () => {
+        if (!cancelled) {
+          setError(CONNECTION_ERROR);
+        }
+      });
+    };
+    trackCallRef.current = trackCall;
 
-        streamRef.current = stream;
-        setLocalStream(stream);
+    getUserMediaRef
+      .current()
+      .then(
+        (stream) => {
+          if (cancelled) {
+            stopTracks(stream);
+            return;
+          }
 
-        // The peer is created only once capture has resolved, so an inbound call
-        // can always be answered immediately. Capturing in parallel would need a
-        // queue for a call that beats the stream, and buys nothing.
-        const peer = createPeer();
-        peerRef.current = peer;
+          streamRef.current = stream;
+          setLocalStream(stream);
 
-        peer.on("open", (id) => setLocalPeerId(id));
-        peer.on("call", (call) => {
-          call.answer(stream);
-          trackCall(call);
-        });
-        peer.on("error", () => setError(CONNECTION_ERROR));
-      })
+          // The peer is created only once capture has resolved, so an inbound call
+          // can always be answered immediately. Capturing in parallel would need a
+          // queue for a call that beats the stream, and buys nothing.
+          const peer = createPeerRef.current();
+          peerRef.current = peer;
+
+          peer.on("open", (id) => {
+            if (!cancelled) {
+              setLocalPeerId(id);
+            }
+          });
+          peer.on("call", (call) => {
+            if (cancelled) {
+              return;
+            }
+            if (callPlacedRef.current) {
+              call.close();
+              return;
+            }
+            callPlacedRef.current = true;
+            call.answer(stream);
+            trackCall(call);
+          });
+          peer.on("error", () => {
+            if (!cancelled) {
+              setError(CONNECTION_ERROR);
+            }
+          });
+        },
+        () => {
+          if (!cancelled) {
+            setError(CAPTURE_ERROR);
+          }
+        },
+      )
+      // Only a getUserMedia rejection is a capture failure; a throw from peer
+      // creation or handler registration reaches here instead.
       .catch(() => {
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setError(CONNECTION_ERROR);
         }
-        setError(CAPTURE_ERROR);
       });
 
     return () => {
       cancelled = true;
+      trackCallRef.current = null;
       callRef.current?.close();
       callRef.current = null;
       peerRef.current?.destroy();
       peerRef.current = null;
       stopTracks(streamRef.current);
       streamRef.current = null;
-      calledPeerIdRef.current = null;
+      callPlacedRef.current = false;
       setLocalStream(null);
       setRemoteStream(null);
       setLocalPeerId(null);
       setError(null);
     };
-  }, [active, createPeer, getUserMedia, trackCall]);
+  }, [active]);
 
-  const callPeer = useCallback(
-    (peerId: string) => {
-      const peer = peerRef.current;
-      const stream = streamRef.current;
-      if (!peer || !stream || calledPeerIdRef.current !== null) {
-        return;
-      }
+  const callPeer = useCallback((peerId: string) => {
+    const peer = peerRef.current;
+    const stream = streamRef.current;
+    const trackCall = trackCallRef.current;
+    if (!peer || !stream || !trackCall || callPlacedRef.current) {
+      return;
+    }
 
-      calledPeerIdRef.current = peerId;
-      trackCall(peer.call(peerId, stream));
-    },
-    [trackCall],
-  );
+    callPlacedRef.current = true;
+    trackCall(peer.call(peerId, stream));
+  }, []);
 
   return { localStream, remoteStream, localPeerId, error, callPeer };
 }
