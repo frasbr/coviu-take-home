@@ -386,6 +386,67 @@ describe("useMedia", () => {
     expect(result.current.error).toBe("The video call ended.");
   });
 
+  it("clears a stale call-ended error once a new call is tracked, via an inbound call", async () => {
+    const { result, peerFake } = await renderActive();
+
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+    fire(peerFake.outbound[0].handlers, "close");
+    expect(result.current.error).toBe("The video call ended.");
+
+    const inbound = createCall();
+    fire(peerFake.handlers, "call", inbound.call);
+
+    expect(result.current.error).toBeNull();
+  });
+
+  it("clears a stale call-ended error once a new call is tracked, via callPeer", async () => {
+    const { result, peerFake } = await renderActive();
+
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+    fire(peerFake.outbound[0].handlers, "close");
+    expect(result.current.error).toBe("The video call ended.");
+
+    act(() => {
+      result.current.callPeer("remote-2");
+    });
+
+    expect(result.current.error).toBeNull();
+  });
+
+  it("clears a peer error once a call is tracked", async () => {
+    const { result, peerFake } = await renderActive();
+
+    fire(peerFake.handlers, "error", new Error("network"));
+    expect(result.current.error).toBe("The video connection failed.");
+
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+
+    expect(result.current.error).toBeNull();
+  });
+
+  it("does not clear the error when an inbound call is closed and never tracked", async () => {
+    const { result, peerFake } = await renderActive();
+
+    act(() => {
+      result.current.callPeer("remote-1");
+    });
+    fire(peerFake.outbound[0].handlers, "error", new Error("negotiation"));
+    expect(result.current.error).toBe("The video connection failed.");
+
+    const inbound = createCall();
+    fire(peerFake.handlers, "call", inbound.call);
+
+    expect(inbound.close).toHaveBeenCalledTimes(1);
+    expect(inbound.answer).not.toHaveBeenCalled();
+    expect(result.current.error).toBe("The video connection failed.");
+  });
+
   it("closes the call, destroys the peer, then stops every track when it goes inactive", async () => {
     const { result, rerender, peerFake, tracks } = await renderActive();
 

@@ -77,6 +77,7 @@ export function useMedia({ active, createPeer, getUserMedia }: UseMediaOptions):
     let cancelled = false;
 
     const trackCall = (call: MediaCall) => {
+      setError(null);
       callRef.current = call;
       call.on("stream", (stream) => {
         if (!cancelled) {
