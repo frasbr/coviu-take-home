@@ -79,6 +79,42 @@ describe("resolveKey", () => {
   });
 });
 
+describe("getSessionEvents", () => {
+  it("returns the events for a provider key in order", () => {
+    const created = services.createSession();
+    const session = repository.getSessionByKey(created.providerKey)!;
+    repository.recordEvent(session.id, "session_ended", { reason: "completed" });
+
+    const events = services.getSessionEvents(created.providerKey);
+
+    expect(events?.map((event) => event.type)).toEqual(["session_created", "session_ended"]);
+  });
+
+  it("returns undefined for a patient key", () => {
+    const created = services.createSession();
+
+    expect(services.getSessionEvents(created.patientKey)).toBeUndefined();
+  });
+
+  it("returns undefined for a key no session has", () => {
+    expect(services.getSessionEvents("no-such-key")).toBeUndefined();
+  });
+
+  it("returns an empty array for a provider key with an empty event log", () => {
+    repository.upsertSession({
+      id: "session-with-no-events",
+      providerKey: "provider-key-no-events",
+      patientKey: "patient-key-no-events",
+      status: "CREATED",
+      createdAt: new Date().toISOString(),
+      endedAt: null,
+      endedReason: null,
+    });
+
+    expect(services.getSessionEvents("provider-key-no-events")).toEqual([]);
+  });
+});
+
 describe("endInterruptedSessions", () => {
   it("moves every non-ENDED session to ENDED with reason interrupted, and writes the event", () => {
     const created = services.createSession();

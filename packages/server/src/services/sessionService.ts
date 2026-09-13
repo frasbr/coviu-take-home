@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { CreateSessionResponse, Role, SessionStatus } from "@coviu/shared";
+import type { CreateSessionResponse, Event, Role, SessionStatus } from "@coviu/shared";
 import type { SessionRepository } from "../persistence/sessionRepository.js";
 import type { SessionRegistry } from "../session/sessionRegistry.js";
 
@@ -13,6 +13,7 @@ export interface SessionService {
   createSession(): CreateSessionResponse;
   resolveKey(key: string): ResolvedKey | undefined;
   endInterruptedSessions(): void;
+  getSessionEvents(providerKey: string): Event[] | undefined;
 }
 
 function makeKey(): string {
@@ -61,6 +62,15 @@ export function createSessionService(
         role: session.providerKey === key ? "provider" : "patient",
         status: session.status,
       };
+    },
+
+    getSessionEvents(providerKey: string): Event[] | undefined {
+      const session = repository.getSessionByKey(providerKey);
+      if (!session || session.providerKey !== providerKey) {
+        return undefined;
+      }
+
+      return repository.getEvents(session.id);
     },
 
     endInterruptedSessions(): void {
