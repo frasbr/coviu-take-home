@@ -11,10 +11,12 @@ The brief gives these constraints. The design obeys them.
 - One provider and one patient are in each session. Group calls are out of scope.
 - There is no authentication system and there are no user accounts. Section 4.1 gives each role
   a secret key. A key is an access token. It is not an identity. Do not make it into an identity.
-- There is no CI/CD pipeline, no design system, no mobile app, and no scaling work. The app runs
-  on one machine. Do not add queues, load balancers, or code that coordinates many instances.
+- There is no CI/CD pipeline, no mobile app, and no scaling work. The app runs on one machine. Do
+  not add queues, load balancers, or code that coordinates many instances.
 - "No visual design" applies only to the appearance of the UI. It does not permit a frontend
-  that is difficult to change. See section 2.
+  that is difficult to change. See section 2. A styling layer is not visual design: it is
+  plumbing for applying whatever appearance the UI ends up with, and is judged on maintainability
+  like the rest of the frontend.
 - Maintainability and future extension are the two qualities under review. Keep the signaling,
   media, session, and persistence code in different modules. You can then replace one module
   without a change to the others.
@@ -58,6 +60,7 @@ what it replaces. A package that replaces nothing here does not belong in the tr
 | `zod` | shared | Hand-written type guards, request validation, and the TypeScript types themselves. See §6.1. |
 | `express` | server | Hand-written routing and body parsing for the three endpoints in §4.2. It attaches to the same `http.Server` that Socket.IO uses, so there is one listener and one port. |
 | `better-sqlite3` | server | A hand-rolled driver. Its API is synchronous, so the repository (§5.3) needs no async code and no connection pool. |
+| `tailwindcss`, `@tailwindcss/vite` | client | The hand-written stylesheet and the class-naming convention that a project with no design system would otherwise have to invent and keep consistent by review. |
 
 Two needs take no package. `node:crypto` makes the ID and the two keys (§4.1) with `randomUUID`
 and `randomBytes`. `node:events` carries the Session emitter (§6.2).
@@ -547,6 +550,8 @@ This is a React single-page app with Vite. Section 2 gives the reason for React.
   without a change to the session code.
 - **Chat uses the socket layer. It is not a peer of it.** Chat sends and receives `chat:message`
   on the connection that the session layer owns. It does not open its own socket.
+- **Client styles live in one Tailwind stylesheet, imported from `main.tsx`.** There is no
+  per-component CSS and no CSS-in-JS. See §2.1.
 
 ### 6.4 Tests
 
