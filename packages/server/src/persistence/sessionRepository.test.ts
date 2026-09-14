@@ -115,13 +115,12 @@ describe("recordEvent / getEvents", () => {
 
   it("records an event with data and parses it back from JSON", () => {
     repository.upsertSession(makeSession());
-    repository.recordEvent("session-1", "chat_message_sent", {
-      sender: "provider",
-      text: "hello",
+    repository.recordEvent("session-1", "session_ended", {
+      reason: "provider_ended",
     });
 
     const events = repository.getEvents("session-1");
-    expect(events[0]?.data).toEqual({ sender: "provider", text: "hello" });
+    expect(events[0]?.data).toEqual({ reason: "provider_ended" });
   });
 
   it("returns events in id order, oldest first", () => {

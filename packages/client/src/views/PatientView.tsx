@@ -1,8 +1,11 @@
-import { useEffect, type ReactNode } from "react";
-import { createBrowserPeer } from "../media/peerFactory.js";
-import { useMedia } from "../media/useMedia.js";
+import { type ReactNode, useEffect } from "react";
+import { createBrowserPeer } from "../peer/peerFactory.js";
+import { useChat } from "../peer/useChat.js";
+import { useMedia } from "../peer/useMedia.js";
+import { usePeer } from "../peer/usePeer.js";
 import { useSession } from "../session/useSession.js";
 import { CallScreenShell } from "./CallScreenShell.js";
+import { ChatPanel } from "./ChatPanel.js";
 import { ControlBar } from "./ControlBar.js";
 import { VideoPanel } from "./VideoPanel.js";
 
@@ -29,10 +32,38 @@ export function PatientView({ baseUrl, sessionKey }: PatientViewProps) {
     connection.state.state === "ACTIVE" &&
     connection.state.presence.patient;
 
-  const { localStream, remoteStream, localPeerId, error } = useMedia({
+  const {
+    peer,
+    localPeerId,
+    error: peerError,
+  } = usePeer({
     active,
     createPeer: () => createBrowserPeer(baseUrl),
+  });
+
+  const {
+    localStream,
+    remoteStream,
+    error: mediaError,
+  } = useMedia({
+    active,
+    peer,
     getUserMedia: () => navigator.mediaDevices.getUserMedia({ audio: true, video: true }),
+  });
+
+  const error = peerError ?? mediaError;
+
+  // The patient never calls connectTo: the provider connects and this side
+  // takes the peer's 'connection' event, handled entirely inside useChat.
+  const {
+    transcript,
+    isOpen: chatOpen,
+    sendMessage,
+  } = useChat({
+    active,
+    peer,
+    role: "patient",
+    sessionKey,
   });
 
   // The patient only ever publishes its own peer id. The provider places the
@@ -82,6 +113,18 @@ export function PatientView({ baseUrl, sessionKey }: PatientViewProps) {
           localRole="Patient"
           remoteRole="Provider"
         />
+      }
+      chat={
+        // Chat only exists in ACTIVE (architecture §4.3): the waiting room is
+        // presence-only, so no chat affordance renders while `active` is false.
+        active && (
+          <ChatPanel
+            transcript={transcript}
+            isOpen={chatOpen}
+            localRole="patient"
+            onSend={sendMessage}
+          />
+        )
       }
       bar={
         <ControlBar

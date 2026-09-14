@@ -4,8 +4,12 @@ import type { SessionStatePayload } from "@coviu/shared";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { UseMediaResult } from "../media/useMedia.js";
-import { useMedia } from "../media/useMedia.js";
+import type { UseChatResult } from "../peer/useChat.js";
+import { useChat } from "../peer/useChat.js";
+import type { UseMediaResult } from "../peer/useMedia.js";
+import { useMedia } from "../peer/useMedia.js";
+import type { UsePeerResult } from "../peer/usePeer.js";
+import { usePeer } from "../peer/usePeer.js";
 import type { SessionConnection } from "../session/useSession.js";
 import { useSession } from "../session/useSession.js";
 import type { SessionEventsResult } from "../session/useSessionEvents.js";
@@ -14,14 +18,18 @@ import { ProviderView } from "./ProviderView.js";
 
 vi.mock("../session/useSession.js", () => ({ useSession: vi.fn() }));
 vi.mock("../session/useSessionEvents.js", () => ({ useSessionEvents: vi.fn() }));
-vi.mock("../media/useMedia.js", () => ({ useMedia: vi.fn() }));
-vi.mock("../media/peerFactory.js", () => ({ createBrowserPeer: vi.fn() }));
+vi.mock("../peer/useMedia.js", () => ({ useMedia: vi.fn() }));
+vi.mock("../peer/usePeer.js", () => ({ usePeer: vi.fn() }));
+vi.mock("../peer/useChat.js", () => ({ useChat: vi.fn() }));
+vi.mock("../peer/peerFactory.js", () => ({ createBrowserPeer: vi.fn() }));
 
 const admit = vi.fn();
 const endSession = vi.fn();
 const leave = vi.fn();
 const sendPeerId = vi.fn();
 const callPeer = vi.fn();
+const sendMessage = vi.fn();
+const connectTo = vi.fn();
 
 function mockConnection(connection: SessionConnection, remotePeerId: string | null = null) {
   vi.mocked(useSession).mockReturnValue({
@@ -38,15 +46,33 @@ function mockMedia(overrides: Partial<UseMediaResult> = {}) {
   vi.mocked(useMedia).mockReturnValue({
     localStream: null,
     remoteStream: null,
-    localPeerId: null,
     error: null,
     callPeer,
     ...overrides,
   });
 }
 
+function mockPeer(overrides: Partial<UsePeerResult> = {}) {
+  vi.mocked(usePeer).mockReturnValue({
+    peer: null,
+    localPeerId: null,
+    error: null,
+    ...overrides,
+  });
+}
+
 function mockEvents(result: SessionEventsResult) {
   vi.mocked(useSessionEvents).mockReturnValue(result);
+}
+
+function mockChat(overrides: Partial<UseChatResult> = {}) {
+  vi.mocked(useChat).mockReturnValue({
+    transcript: [],
+    isOpen: false,
+    sendMessage,
+    connectTo,
+    ...overrides,
+  });
 }
 
 function providerIn(state: SessionStatePayload["state"]): SessionConnection {
@@ -64,6 +90,8 @@ function providerIn(state: SessionStatePayload["state"]): SessionConnection {
 
 beforeEach(() => {
   mockMedia();
+  mockPeer();
+  mockChat();
   mockEvents({ status: "idle" });
 });
 
@@ -216,25 +244,26 @@ describe("ProviderView", () => {
 
   it("sends its own peer id once the local peer is open", () => {
     mockConnection(providerIn("ACTIVE"));
-    mockMedia({ localPeerId: "local-peer" });
+    mockPeer({ localPeerId: "local-peer" });
 
     render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
 
     expect(sendPeerId).toHaveBeenCalledWith("local-peer");
   });
 
-  it("calls the remote peer once both peer ids are known", () => {
+  it("calls the remote peer and connects chat once both peer ids are known", () => {
     mockConnection(providerIn("ACTIVE"), "remote-peer");
-    mockMedia({ localPeerId: "local-peer" });
+    mockPeer({ localPeerId: "local-peer" });
 
     render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
 
     expect(callPeer).toHaveBeenCalledWith("remote-peer");
+    expect(connectTo).toHaveBeenCalledWith("remote-peer");
   });
 
   it("does not call the remote peer before its own peer is open", () => {
     mockConnection(providerIn("ACTIVE"), "remote-peer");
-    mockMedia({ localPeerId: null });
+    mockPeer({ localPeerId: null });
 
     render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
 
@@ -243,12 +272,12 @@ describe("ProviderView", () => {
 
   it("places the call on the render where its own peer opens, if the remote id came first", () => {
     mockConnection(providerIn("ACTIVE"), "remote-peer");
-    mockMedia({ localPeerId: null });
+    mockPeer({ localPeerId: null });
 
     const { rerender } = render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
     expect(callPeer).not.toHaveBeenCalled();
 
-    mockMedia({ localPeerId: "local-peer" });
+    mockPeer({ localPeerId: "local-peer" });
     rerender(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
 
     expect(callPeer).toHaveBeenCalledWith("remote-peer");
@@ -307,5 +336,31 @@ describe("ProviderView", () => {
     expect(screen.queryByLabelText("Remote video")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Local video")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Session history" })).toBeVisible();
+  });
+
+  it("shows no chat affordance while WAITING", () => {
+    mockConnection(providerIn("WAITING"));
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(screen.queryByRole("heading", { name: "Chat" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Message")).not.toBeInTheDocument();
+  });
+
+  it("shows the chat panel once ACTIVE and sends a message through it", async () => {
+    mockConnection(providerIn("ACTIVE"));
+    mockChat({
+      isOpen: true,
+      transcript: [
+        { id: "1", sender: "patient", text: "hi there", sentAt: "2026-01-01T00:00:00.000Z" },
+      ],
+    });
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(screen.getByText("hi there")).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Message"), "hello{enter}");
+
+    expect(sendMessage).toHaveBeenCalledWith("hello");
   });
 });

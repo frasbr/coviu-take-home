@@ -1,10 +1,13 @@
-import { useEffect, type ReactNode } from "react";
-import { createBrowserPeer } from "../media/peerFactory.js";
-import { useMedia } from "../media/useMedia.js";
+import { type ReactNode, useEffect } from "react";
+import { createBrowserPeer } from "../peer/peerFactory.js";
+import { useChat } from "../peer/useChat.js";
+import { useMedia } from "../peer/useMedia.js";
+import { usePeer } from "../peer/usePeer.js";
 import { useSession } from "../session/useSession.js";
 import { useSessionEvents } from "../session/useSessionEvents.js";
 import type { SessionEventsResult } from "../session/useSessionEvents.js";
 import { CallScreenShell } from "./CallScreenShell.js";
+import { ChatPanel } from "./ChatPanel.js";
 import { ControlBar } from "./ControlBar.js";
 import { VideoPanel } from "./VideoPanel.js";
 
@@ -58,10 +61,38 @@ export function ProviderView({ baseUrl, sessionKey }: ProviderViewProps) {
 
   const eventsResult = useSessionEvents(baseUrl, sessionKey, ended);
 
-  const { localStream, remoteStream, localPeerId, error, callPeer } = useMedia({
+  const {
+    peer,
+    localPeerId,
+    error: peerError,
+  } = usePeer({
     active,
     createPeer: () => createBrowserPeer(baseUrl),
+  });
+
+  const {
+    localStream,
+    remoteStream,
+    error: mediaError,
+    callPeer,
+  } = useMedia({
+    active,
+    peer,
     getUserMedia: () => navigator.mediaDevices.getUserMedia({ audio: true, video: true }),
+  });
+
+  const error = peerError ?? mediaError;
+
+  const {
+    transcript,
+    isOpen: chatOpen,
+    sendMessage,
+    connectTo,
+  } = useChat({
+    active,
+    peer,
+    role: "provider",
+    sessionKey,
   });
 
   useEffect(() => {
@@ -75,8 +106,9 @@ export function ProviderView({ baseUrl, sessionKey }: ProviderViewProps) {
   useEffect(() => {
     if (remotePeerId && localPeerId) {
       callPeer(remotePeerId);
+      connectTo(remotePeerId);
     }
-  }, [remotePeerId, localPeerId, callPeer]);
+  }, [remotePeerId, localPeerId, callPeer, connectTo]);
 
   if (connection.status === "resolving") {
     return (
@@ -117,6 +149,18 @@ export function ProviderView({ baseUrl, sessionKey }: ProviderViewProps) {
           localRole="Provider"
           remoteRole="Patient"
         />
+      }
+      chat={
+        // Chat only exists in ACTIVE (architecture §4.3): the waiting room is
+        // presence-only, so no chat affordance renders while `active` is false.
+        active && (
+          <ChatPanel
+            transcript={transcript}
+            isOpen={chatOpen}
+            localRole="provider"
+            onSend={sendMessage}
+          />
+        )
       }
       bar={
         <ControlBar

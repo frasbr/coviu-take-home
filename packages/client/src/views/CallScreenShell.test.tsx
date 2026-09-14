@@ -8,9 +8,7 @@ afterEach(cleanup);
 
 describe("CallScreenShell", () => {
   it("renders the video content and the bar content", () => {
-    render(
-      <CallScreenShell video={<span>video stage</span>} bar={<span>control bar</span>} />,
-    );
+    render(<CallScreenShell video={<span>video stage</span>} bar={<span>control bar</span>} />);
 
     expect(screen.getByText("video stage")).toBeInTheDocument();
     expect(screen.getByText("control bar")).toBeInTheDocument();
@@ -37,5 +35,24 @@ describe("CallScreenShell", () => {
 
     const videoArea = container.firstChild!.firstChild as HTMLElement;
     expect(videoArea).toHaveClass("flex-1", "min-h-0", "overflow-hidden");
+  });
+
+  it("renders no chat panel when none is given", () => {
+    render(<CallScreenShell video={<span>video stage</span>} bar={null} />);
+
+    expect(screen.queryByText("chat panel")).not.toBeInTheDocument();
+  });
+
+  it("renders the chat content alongside the video when given", () => {
+    render(
+      <CallScreenShell
+        video={<span>video stage</span>}
+        chat={<span>chat panel</span>}
+        bar={null}
+      />,
+    );
+
+    expect(screen.getByText("video stage")).toBeInTheDocument();
+    expect(screen.getByText("chat panel")).toBeInTheDocument();
   });
 });

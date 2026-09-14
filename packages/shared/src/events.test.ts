@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ChatMessageEventDataSchema, EventSchema } from "./events.js";
+import { EventSchema } from "./events.js";
 
 describe("EventSchema", () => {
   it("parses a session_ended row", () => {
@@ -20,14 +20,5 @@ describe("EventSchema", () => {
       data: null,
     };
     expect(EventSchema.parse(row)).toEqual(row);
-  });
-});
-
-describe("ChatMessageEventDataSchema", () => {
-  it("parses a chat_message_sent payload", () => {
-    expect(ChatMessageEventDataSchema.parse({ sender: "patient", text: "hi" })).toEqual({
-      sender: "patient",
-      text: "hi",
-    });
   });
 });

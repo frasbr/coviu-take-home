@@ -1,5 +1,5 @@
 import Peer, { type PeerOptions } from "peerjs";
-import type { MediaPeer } from "./useMedia.js";
+import type { MediaPeer } from "./usePeer.js";
 
 const STUN_SERVER = "stun:stun.l.google.com:19302";
 

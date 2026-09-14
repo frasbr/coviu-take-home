@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EndedReasonSchema, RoleSchema } from "./status.js";
+import { EndedReasonSchema } from "./status.js";
 
 /** `events.type` values. */
 export const EventTypeSchema = z.enum([
@@ -13,7 +13,6 @@ export const EventTypeSchema = z.enum([
   "provider_reconnected",
   "session_timed_out",
   "session_ended",
-  "chat_message_sent",
 ]);
 export type EventType = z.infer<typeof EventTypeSchema>;
 
@@ -23,19 +22,8 @@ export const SessionEndedEventDataSchema = z.object({
 });
 export type SessionEndedEventData = z.infer<typeof SessionEndedEventDataSchema>;
 
-/** `data` for a `chat_message_sent` event row. */
-export const ChatMessageEventDataSchema = z.object({
-  sender: RoleSchema,
-  text: z.string(),
-});
-export type ChatMessageEventData = z.infer<typeof ChatMessageEventDataSchema>;
-
 /** Every other event type carries no `data`. */
-export const EventDataSchema = z.union([
-  z.null(),
-  SessionEndedEventDataSchema,
-  ChatMessageEventDataSchema,
-]);
+export const EventDataSchema = z.union([z.null(), SessionEndedEventDataSchema]);
 export type EventData = z.infer<typeof EventDataSchema>;
 
 /** One row of the event log. */
