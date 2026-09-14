@@ -273,6 +273,25 @@ describe("endSession", () => {
     const registry = new SessionRegistry();
     expect(() => registry.endSession("no-such-session")).toThrow();
   });
+
+  it("cancels the pending grace timer, so no timeout events fire after the original grace period", async () => {
+    const registry = new SessionRegistry({ gracePeriodMs: 5 });
+    registry.createSession("session-1");
+    registry.patientConnected("session-1");
+    registry.admit("session-1");
+    registry.providerDisconnected("session-1");
+    const listener = vi.fn();
+    registry.on("transition", listener);
+
+    registry.endSession("session-1");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: "session_ended", endedReason: "provider_ended" }),
+    );
+    expect(registry.getSession("session-1")).toMatchObject({ status: "ENDED" });
+  });
 });
 
 describe("patientLeft", () => {
