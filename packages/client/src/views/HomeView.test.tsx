@@ -51,4 +51,33 @@ describe("HomeView", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("bad request");
   });
+
+  it("renders as a full-height centred card on the same background as the call screens", () => {
+    const { container } = render(<HomeView baseUrl={BASE_URL} />);
+
+    expect(container.firstChild).toHaveClass(
+      "h-screen",
+      "flex",
+      "items-center",
+      "justify-center",
+      "bg-neutral-950",
+    );
+  });
+
+  it("gives the created links a readable, non-default appearance", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse(200, {
+        providerKey: "pk",
+        patientKey: "wk",
+        providerUrl: "https://example.test/p/pk",
+        patientUrl: "https://example.test/w/wk",
+      }),
+    );
+
+    render(<HomeView baseUrl={BASE_URL} />);
+    await userEvent.click(screen.getByRole("button", { name: "Create session" }));
+
+    const link = await screen.findByRole("link", { name: "https://example.test/p/pk" });
+    expect(link.className).not.toBe("");
+  });
 });

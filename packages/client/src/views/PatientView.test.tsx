@@ -121,6 +121,43 @@ describe("PatientView", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
+  it("shows a centred message with no video once ENDED", () => {
+    mockConnection({
+      status: "connected",
+      role: "patient",
+      state: {
+        state: "ENDED",
+        since: "2026-01-01T00:00:00.000Z",
+        reason: "timeout",
+        presence: { provider: false, patient: false },
+      },
+    });
+
+    render(<PatientView baseUrl="https://example.test" sessionKey="wk" />);
+
+    expect(screen.getByText("The session has ended.")).toBeVisible();
+    expect(screen.queryByLabelText("Remote video")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Local video")).not.toBeInTheDocument();
+  });
+
+  it("renders no h1 on the call screen", () => {
+    mockConnection(patientIn("WAITING"));
+
+    render(<PatientView baseUrl="https://example.test" sessionKey="wk" />);
+
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+  });
+
+  it("renders the video feeds alongside the bar while on the call screen", () => {
+    mockConnection(patientIn("WAITING"));
+
+    render(<PatientView baseUrl="https://example.test" sessionKey="wk" />);
+
+    expect(screen.getByLabelText("Remote video")).toBeInTheDocument();
+    expect(screen.getByLabelText("Local video")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Leave" })).toBeInTheDocument();
+  });
+
   it("activates media only once the session is ACTIVE", () => {
     mockConnection(patientIn("ACTIVE"));
 

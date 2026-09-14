@@ -269,4 +269,43 @@ describe("ProviderView", () => {
 
     expect(endSession).toHaveBeenCalled();
   });
+
+  it("renders no h1 on the call screen", () => {
+    mockConnection(providerIn("WAITING"));
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+  });
+
+  it("renders the video feeds alongside the bar while on the call screen", () => {
+    mockConnection(providerIn("WAITING"));
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(screen.getByLabelText("Remote video")).toBeInTheDocument();
+    expect(screen.getByLabelText("Local video")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Admit patient" })).toBeInTheDocument();
+  });
+
+  it("shows both buttons and the presence readout together while WAITING", () => {
+    mockConnection(providerIn("WAITING"));
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(screen.getByRole("button", { name: "Admit patient" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "End session" })).toBeInTheDocument();
+    expect(screen.getByText("Patient: connected")).toBeVisible();
+  });
+
+  it("shows no video and no control bar once ended, only a centred history panel", () => {
+    mockConnection(providerIn("ENDED"));
+    mockEvents({ status: "loaded", events: [] });
+
+    render(<ProviderView baseUrl="https://example.test" sessionKey="pk" />);
+
+    expect(screen.queryByLabelText("Remote video")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Local video")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Session history" })).toBeVisible();
+  });
 });

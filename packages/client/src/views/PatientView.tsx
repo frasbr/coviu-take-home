@@ -1,12 +1,22 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { createBrowserPeer } from "../media/peerFactory.js";
 import { useMedia } from "../media/useMedia.js";
 import { useSession } from "../session/useSession.js";
+import { CallScreenShell } from "./CallScreenShell.js";
+import { ControlBar } from "./ControlBar.js";
 import { VideoPanel } from "./VideoPanel.js";
 
 export interface PatientViewProps {
   baseUrl: string;
   sessionKey: string;
+}
+
+function CenteredScreen({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-screen w-full items-center justify-center bg-neutral-950 text-white">
+      {children}
+    </div>
+  );
 }
 
 export function PatientView({ baseUrl, sessionKey }: PatientViewProps) {
@@ -34,36 +44,55 @@ export function PatientView({ baseUrl, sessionKey }: PatientViewProps) {
   }, [localPeerId, sendPeerId]);
 
   if (connection.status === "resolving") {
-    return <p>Loading session…</p>;
+    return (
+      <CenteredScreen>
+        <p>Loading session…</p>
+      </CenteredScreen>
+    );
   }
 
   if (connection.status === "error") {
     return (
-      <div role="alert">
-        <h1>Session unavailable</h1>
-        <p>{connection.error.message}</p>
-      </div>
+      <CenteredScreen>
+        <div role="alert">
+          <h1>Session unavailable</h1>
+          <p>{connection.error.message}</p>
+        </div>
+      </CenteredScreen>
     );
   }
 
   const { state } = connection;
 
+  if (state.state === "ENDED") {
+    return (
+      <CenteredScreen>
+        <p>The session has ended.</p>
+      </CenteredScreen>
+    );
+  }
+
   return (
-    <div>
-      <h1>Patient</h1>
-      <p>State: {state.state}</p>
-      {state.state !== "ENDED" && (
-        <button type="button" onClick={leave}>
-          Leave
-        </button>
-      )}
-      <VideoPanel
-        localStream={localStream}
-        remoteStream={remoteStream}
-        error={error}
-        localRole="Patient"
-        remoteRole="Provider"
-      />
-    </div>
+    <CallScreenShell
+      video={
+        <VideoPanel
+          localStream={localStream}
+          remoteStream={remoteStream}
+          error={error}
+          localRole="Patient"
+          remoteRole="Provider"
+        />
+      }
+      bar={
+        <ControlBar
+          status={<p>State: {state.state}</p>}
+          actions={
+            <button type="button" onClick={leave}>
+              Leave
+            </button>
+          }
+        />
+      }
+    />
   );
 }
