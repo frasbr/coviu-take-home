@@ -78,4 +78,51 @@ describe("VideoPanel", () => {
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("shows a placeholder reason on the remote tile when remoteStream is null", () => {
+    const localStream = createStream();
+    render(
+      <VideoPanel
+        localStream={localStream}
+        remoteStream={null}
+        error={null}
+        remoteRole="Provider"
+      />,
+    );
+
+    expect(screen.getByText("Provider")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for the other side to join")).toBeInTheDocument();
+
+    const remoteVideo = video("Remote video");
+    expect(remoteVideo).toBeInTheDocument();
+    expect(remoteVideo.srcObject).toBeNull();
+  });
+
+  it("shows a placeholder reason on the local tile when localStream is null", () => {
+    const remoteStream = createStream();
+    render(<VideoPanel localStream={null} remoteStream={remoteStream} error={null} />);
+
+    expect(screen.getByText("Waiting for the camera")).toBeInTheDocument();
+
+    const localVideo = video("Local video");
+    expect(localVideo).toBeInTheDocument();
+    expect(localVideo.srcObject).toBeNull();
+    expect(localVideo.muted).toBe(true);
+  });
+
+  it("shows both placeholder reasons when both streams are null", () => {
+    render(<VideoPanel localStream={null} remoteStream={null} error={null} />);
+
+    expect(screen.getByText("Waiting for the other side to join")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for the camera")).toBeInTheDocument();
+  });
+
+  it("shows no placeholder reasons when both streams are set", () => {
+    const localStream = createStream();
+    const remoteStream = createStream();
+    render(<VideoPanel localStream={localStream} remoteStream={remoteStream} error={null} />);
+
+    expect(screen.queryByText("Waiting for the other side to join")).not.toBeInTheDocument();
+    expect(screen.queryByText("Waiting for the camera")).not.toBeInTheDocument();
+  });
 });
