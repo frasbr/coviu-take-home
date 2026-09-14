@@ -37,9 +37,14 @@ points to this paragraph.
 **Server** (`packages/server`). This is one Node process. Section 6.2 gives its internal modules
 and their dependency rules.
 
-Audio and video go directly from one browser to the other. PeerJS sets up that path (§4.4). Only
-the connection details reach the server. No media does. The server therefore stays small, and the
-app does not need the media infrastructure that the brief excludes.
+Audio, video, and chat go directly from one browser to the other. PeerJS sets up that path
+(§4.4). Only the connection details reach the server. No media and no chat text does. The server
+therefore stays small, and the app does not need the media infrastructure that the brief excludes.
+
+**No consultation content reaches the server.** This is a requirement, not a consequence. Media
+and chat both ride the peer connection, which is encrypted end to end and does not pass through
+this process. A change that routes either one through the server breaks the requirement, however
+convenient it looks. Section 4.4 gives the cost the requirement imposes.
 
 Risk: WebRTC with a STUN server only can fail through a restrictive NAT. This app runs on one
 local network for the test. The team accepts this risk. Section 7 gives the TURN extension point.
@@ -55,7 +60,7 @@ what it replaces. A package that replaces nothing here does not belong in the tr
 | Package | Where | What it replaces |
 |---|---|---|
 | `socket.io`, `socket.io-client` | server, client | The message envelope, the heartbeat, the reconnect and backoff code in the client, and the hand-kept map of peer sockets. See §4.3. |
-| `peerjs` | client | Every line of `RTCPeerConnection` code: the offer and answer flow, the ICE exchange, and the track handling. See §4.4. |
+| `peerjs` | client | Every line of `RTCPeerConnection` code: the offer and answer flow, the ICE exchange, the track handling, and the `RTCDataChannel` setup that carries chat. See §4.4. |
 | `peer` | server | The `webrtc:*` relay events and the code that forwarded them. `ExpressPeerServer` mounts on the same `http.Server`, so it adds no process and no port. |
 | `zod` | shared | Hand-written type guards, request validation, and the TypeScript types themselves. See §6.1. |
 | `express` | server | Hand-written routing and body parsing for the three endpoints in §4.2. It attaches to the same `http.Server` that Socket.IO uses, so there is one listener and one port. |
@@ -215,8 +220,8 @@ no close frame. The grace timer and the `presence` flags (§3) depend on that re
 heartbeat code.
 
 **Do not enable `connectionStateRecovery`.** It restores missed packets for a short window only.
-The `chat:history` event below fills the same need and also survives a page reload. Two
-mechanisms for one job would disagree with each other.
+Every message in the table below is either a command or the current state, and `session:state`
+carries the whole state on each reconnect. There is nothing to replay.
 
 There is no message envelope. Each row below is a Socket.IO event name, and the payload is the
 argument to `emit`.
@@ -226,9 +231,7 @@ argument to `emit`.
 | `admit` | provider to server | `{}` | The provider admits the patient. |
 | `session:state` | server to both | `{ state, since, reason, presence }` | The correct state. The server sends it on each transition (§3) and on each change of `presence`. `presence` is `{ provider: boolean, patient: boolean }`. `reason` has a value only in state `ENDED`, and it holds the same value as `sessions.ended_reason` (§5.1). |
 | `peer:id` | peer to peer | `{ peerId }` | The PeerJS ID of the sender (§4.4). The server relays it and does not store it. |
-| `chat:message` | peer to peer | `{ text, sentAt }` | Text chat. The server relays it and writes it to the event log (§5.2). |
 | `patient:leave` | patient to server | `{}` | The patient leaves the consultation. The server sets `presence.patient` to false, moves the session from `ACTIVE` back to `WAITING` (§3), and writes a `patient_left` event. The session does not end. |
-| `chat:history` | server to one client | `{ messages }` | Chat that the client missed. The server sends it once, on connection. Each item is `{ sender, text, sentAt }`. |
 | `end-session` | provider to server | `{}` | The provider ends the consultation. |
 | `error` | server to one client | `{ code, message }` | A protocol error. |
 
@@ -252,34 +255,38 @@ patient only.
 | State | The server accepts |
 |---|---|
 | `CREATED` | `end-session` |
-| `WAITING` | `admit`, `chat:message`, `patient:leave`, `end-session` |
-| `ACTIVE` | `peer:id`, `chat:message`, `patient:leave`, `end-session` |
+| `WAITING` | `admit`, `patient:leave`, `end-session` |
+| `ACTIVE` | `peer:id`, `patient:leave`, `end-session` |
 | `DISCONNECTED_GRACE` | `patient:leave` |
 | `ENDED` | nothing |
 
-A patient in the waiting room can therefore send chat. A patient who waits needs a way to say
-that they are late, or that their camera does not work.
+**A patient in the waiting room cannot chat.** Chat needs a peer connection and no peer exists
+before `ACTIVE` (§4.4). The waiting room shows presence to the provider and nothing else. Do not
+add a socket message to carry a "running late" note: it would put patient-written text on the
+server, which §2 forbids.
 
-The server builds `chat:history` from the `chat_message_sent` rows in the event log (§5.2). The
-Services module does that work with `getEvents` (§5.3), not the state machine (§6.2). Persistence
-gains no function for it, and Signaling still never imports persistence.
+No message in this table carries consultation content. Signaling is a transport for session
+control, so it needs nothing from persistence beyond what the event recorder already writes.
 
-### 4.4 Media
+### 4.4 Media and chat
 
-PeerJS wraps `RTCPeerConnection` (§2.1). The client writes no SDP code, no ICE code, and no track
-handling code.
+PeerJS wraps `RTCPeerConnection` (§2.1). The client writes no SDP code, no ICE code, no track
+handling code, and no `RTCDataChannel` code.
+
+One peer connection carries three things: the audio track, the video track, and the chat data
+channel. They share a lifecycle for that reason, and §6.3 puts them behind one client layer.
 
 PeerJS carries its own signaling on its own channel. `ExpressPeerServer` mounts on the same
 `http.Server` that Express and Socket.IO use, under the path `/peerjs`. There is still one
 process and one port (§2).
 
 Each client therefore holds two connections to the server: one Socket.IO connection for the
-session (§4.3), and one PeerJS connection for media setup. That is the price of the dependency.
+session (§4.3), and one PeerJS connection for peer setup. That is the price of the dependency.
 In exchange the design loses the offer relay, the answer relay, the ICE relay, and every line of
 `RTCPeerConnection` code.
 
 The flow starts when the session reaches `ACTIVE`. A client makes no `Peer` before that, so a
-patient in the waiting room holds no media resources.
+patient in the waiting room holds no media resources and has no chat (§4.3).
 
 1. Each client makes a `Peer` and waits for its `open` event. PeerJS gives the peer a random ID.
 2. Each client sends `peer:id` with that ID on its Socket.IO connection (§4.3). The server relays
@@ -287,6 +294,8 @@ patient in the waiting room holds no media resources.
 3. The provider client calls `peer.call(patientPeerId, localStream)`.
 4. The patient client takes the `call` event and answers with `call.answer(localStream)`.
 5. Each side takes the `stream` event and puts the remote stream into a `<video>` element.
+6. The provider client also calls `peer.connect(patientPeerId)` for the chat data channel. The
+   patient client takes the `connection` event. Chat is live when the channel fires `open`.
 
 **The provider always calls. The patient always answers.** Two peers therefore never call each
 other at the same time. The provider client calls again whenever it receives a `peer:id` from the
@@ -296,12 +305,36 @@ for this purpose.
 
 Set `config.iceServers` in the `Peer` constructor. Use a public STUN server only, for example
 `stun:stun.l.google.com:19302`. This is enough for a demonstration on one network (§1). Section 7
-gives the TURN extension point.
+gives the TURN extension point. A STUN server learns an address, never a packet, so it does not
+weaken §2. A TURN server would relay the encrypted stream, which keeps the content unreadable to
+the relay but does put our infrastructure on the path. Decide that when TURN is added.
 
-**Do not send chat on a PeerJS data channel.** PeerJS offers `peer.connect()` for data, and that
-looks like a simplification. It is not. A data channel does not pass through the server, so the
-server could not write the `chat_message_sent` rows that the brief asks for (§5.2). Chat stays on
-Socket.IO.
+**Chat goes on the PeerJS data channel, not on Socket.IO.** A data channel does not pass through
+the server, which is the whole point (§2). The server never sees a message and cannot log one.
+This costs the design three things, and each one is paid for below rather than worked around.
+
+*The event log holds no chat.* §5.2 has no `chat_message_sent` row. The session record shows that
+a consultation happened, who connected, and when, and it shows nothing about what was said. That
+is the trade the requirement asks for. Do not add a metadata-only chat row later without a
+decision to revisit §2: a sender and a timestamp for each message is itself clinical information.
+
+*The server cannot replay missed chat.* The peers replay it to each other instead. Each message
+carries a UUID and a `sentAt`. When the data channel fires `open`, each side sends its full
+transcript to the other, and each side merges the two by UUID and orders the result by `sentAt`.
+The exchange is symmetric, so neither side needs to know which of them reconnected, and a message
+that both sides already hold merges to one entry. This is the one place the client holds a
+protocol of its own, so keep it in one module and test it as a pure merge function.
+
+*A transcript that both browsers lose is gone.* Replay needs a peer that still holds the messages.
+Each client therefore also writes its transcript to `sessionStorage`, keyed by session ID, and
+reads it back on mount. A reload then recovers without the other peer. `sessionStorage` and not
+`localStorage`: the transcript survives a reload and does not outlive the browser tab, so a shared
+clinic machine keeps no consultation text after the tab closes. Accept that a transcript lost from
+both browsers is unrecoverable. There is no server copy by design.
+
+Chat is only possible in `ACTIVE`, because the peer connection is (§4.3). The state machine (§3)
+therefore needs no chat state of any kind: the data channel's own `open` and `close` events are
+the only source of "can I send a message right now".
 
 **The PeerServer has no access control.** Anybody who reaches it can register a peer, and can call
 any peer ID that they know. A peer ID is random, and a client learns the other peer ID only over
@@ -398,20 +431,19 @@ This table is the one place that maps the state machine (§3) to rows.
 | `provider_reconnected` | `null` | the provider socket reconnects in the grace period. |
 | `session_timed_out` | `null` | the grace period elapses with no provider reconnect. |
 | `session_ended` | `{ "reason": "provider_ended" \| "timeout" \| "interrupted" }` | the session reaches `ENDED`. |
-| `chat_message_sent` | `{ "sender": "provider" \| "patient", "text": "..." }` | either peer sends a chat message. |
 
-Most transitions write one row. A timeout writes two rows: `session_timed_out` and then
-`session_ended`. A chat message writes a row but is not a transition.
+Every row is a transition or a connection fact. **No row records chat.** Chat never reaches this
+process (§4.4), so there is nothing to write. A timeout writes two rows: `session_timed_out` and
+then `session_ended`. Every other transition writes one.
 
 - `data` is one JSON text column, not a table for each event type. The event set is mixed and
   grows only at the end. Normalisation gives either one table with many empty columns or many
   small tables. Both are worse for the only query this log needs:
   `SELECT * FROM events WHERE session_id = ? ORDER BY id`. Move a field into a real column when
   you must filter on it. Do not normalise before that.
-- Chat text is in this table and not in a `messages` table, for the same reason. Chat is one
-  more thing that happened. It is not an entity with its own lifecycle. There is no edit, no
-  delete, and no read receipt in scope. Split it out if chat gets attachments or delivery
-  receipts (§7).
+- There is no `messages` table and no chat column, and adding one is not an oversight to fix.
+  §2 keeps consultation content off this machine. A schema change that gives chat a home here
+  needs that decision reversed first.
 - `patient_disconnected` and `patient_left` have the same effect on `presence` but they are
   different facts. A disconnect may reverse itself. A departure is a decision. The provider waits
   after the first and ends the session after the second, so the log keeps them apart.
@@ -431,7 +463,7 @@ is the only list of database operations in this document.
   `resolveKey` (§6.2) uses it for both entry points (§4.2, §4.3).
 - `recordEvent(sessionId, type, data?): void`. Insert one row into `events`.
 - `getEvents(sessionId): Event[]`. Read the full log for a session, in `id` order. It backs
-  `GET /api/sessions/:providerKey/events` (§4.2) and `chat:history` (§4.3).
+  `GET /api/sessions/:providerKey/events` (§4.2).
 - `listOpenSessions(): Session[]`. Read every row whose status is not `ENDED`. The start-up sweep
   in §3 needs it.
 
@@ -498,7 +530,6 @@ Each function is separate and small.
   §4.1 lives in this one function.
 - `getSessionEvents(providerKey)`. Backs `GET /api/sessions/:providerKey/events` (§4.2). It calls
   persistence directly and never calls Session.
-- `getChatHistory(sessionId)`. Builds the `chat:history` payload (§4.3).
 - `endInterruptedSessions()`. The start-up sweep in §3.
 
 **Event recorder.** This is a subscriber, not a caller. It subscribes to the Session emitter at
@@ -542,14 +573,19 @@ This is a React single-page app with Vite. Section 2 gives the reason for React.
   state. It holds no reconnect code and no backoff code: the Socket.IO client does that work
   (§2.1). It uses the types from `shared`. One socket serves the whole app. Do not open a second
   one in a view.
-- **A media layer that never imports the socket layer.** It wraps the PeerJS `Peer` (§4.4): local
-  media capture, the peer lifecycle, and the call. It exposes callbacks, for example "my peer ID
-  is ready" and "remote stream is ready", and methods, for example "call this peer ID". It never
-  emits a socket event itself. The views carry a peer ID from this layer to the socket layer and
-  back. The media wrapper therefore stays testable, and a different media library can replace it
-  without a change to the session code.
-- **Chat uses the socket layer. It is not a peer of it.** Chat sends and receives `chat:message`
-  on the connection that the session layer owns. It does not open its own socket.
+- **A peer layer that never imports the socket layer.** It wraps the PeerJS `Peer` (§4.4) and
+  owns everything that rides one peer connection: local media capture, the peer lifecycle, the
+  call, and the chat data channel. It exposes callbacks, for example "my peer ID is ready",
+  "remote stream is ready", and "a chat message arrived", and methods, for example "call this
+  peer ID" and "send this message". It never emits a socket event itself. The views carry a peer
+  ID from this layer to the socket layer and back. The peer wrapper therefore stays testable, and
+  a different media library can replace it without a change to the session code.
+- **Media and chat are separate modules inside the peer layer.** One `Peer` instance is passed to
+  both. Media owns the tracks; chat owns the data channel, the transcript, the `sessionStorage`
+  read and write, and the merge function from §4.4. They do not import each other. The layer is
+  one thing because the peer lifecycle is one thing, not because the two jobs are one job.
+- **Chat never touches the socket layer.** It sends no socket event and reads none. If chat code
+  needs something from the socket layer, the design has drifted from §2: stop and check.
 - **Client styles live in one Tailwind stylesheet, imported from `main.tsx`.** There is no
   per-component CSS and no CSS-in-JS. See §2.1.
 
@@ -592,4 +628,11 @@ These are the points to design new code around.
   None of this changes the state machine (§3) or the event schema (§5.2).
 - **A hosted database in place of SQLite.** Write a new implementation of the repository
   interface (§5.3). Do not touch the signaling code or the session code.
+- **A retained chat transcript.** This one is a policy change before it is a code change. Today no
+  chat text leaves the two browsers (§2, §4.4), and a regulator or a clinician may later require
+  the opposite. Do not solve it by routing chat back through the socket: that gives the server
+  plaintext for every session, including the ones nobody asked to retain. Have the peers encrypt
+  the transcript client-side and upload the ciphertext at `ENDED`, so the server stores something
+  it cannot read. That needs a key custody decision, which is why this is an extension point and
+  not a default.
 
